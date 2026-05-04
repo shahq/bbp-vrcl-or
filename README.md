@@ -208,4 +208,4 @@ The server exposes endpoints for:
 - The app runs as a single Express server with Vite middleware in development.
 - Production serves the built app from `dist/`.
 - Card files are written as Markdown with YAML frontmatter so sessions stay human-readable and export-friendly.
-- See [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) for a detailed build journal and [`bbp-phase2.md`](./bbp-phase2.md) for the roadmap.
+- See [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) for a detailed build journal, [`bbp-phase2.md`](./bbp-phase2.md) for the roadmap, and [`FIREBASE_BACKEND_MIGRATION_PLAN.md`](./FIREBASE_BACKEND_MIGRATION_PLAN.md) for the staged Firebase backend rewrite plan.
