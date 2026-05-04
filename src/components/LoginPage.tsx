@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { Lock, Unlock, Loader2, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { apiUrl } from '../config/api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -35,7 +36,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/admin/login', {
+      const response = await fetch(apiUrl('/api/admin/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })

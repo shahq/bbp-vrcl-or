@@ -21,6 +21,7 @@ import { generateBriefFromUploads, generateCards, ModelType } from './services/a
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
+import { apiUrl } from './config/api';
 
 // Session types
 interface Session {
@@ -118,7 +119,7 @@ function Dashboard() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await fetch(apiUrl('/api/sessions'), {
         headers: { 'x-admin-session': adminSessionId! }
       });
 
@@ -142,7 +143,7 @@ function Dashboard() {
 
   const createSession = async (name: string, requirePassword: boolean) => {
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await fetch(apiUrl('/api/sessions'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -186,7 +187,7 @@ function Dashboard() {
     if (!confirm('Are you sure you want to delete this session?')) return;
     
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'DELETE',
         headers: { 'x-admin-session': adminSessionId! }
       });
@@ -436,7 +437,7 @@ function SessionView() {
 
     const loadAiConfig = async () => {
       try {
-        const response = await fetch('/api/ai/config');
+        const response = await fetch(apiUrl('/api/ai/config'));
         if (!response.ok) return;
         const data = await response.json();
         if (!cancelled && typeof data.defaultModel === 'string' && data.defaultModel.trim()) {
@@ -529,7 +530,7 @@ function SessionView() {
 
     const fetchAdminToken = async () => {
       try {
-        const response = await fetch('/api/admin/partykit-token', {
+        const response = await fetch(apiUrl('/api/admin/partykit-token'), {
           method: 'POST',
           headers: { 'x-admin-session': adminSessionId },
         });
@@ -683,7 +684,7 @@ function SessionView() {
     if (!isAdminVerified || !adminSessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${targetSessionId}/attachments`, {
+      const response = await fetch(apiUrl(`/api/sessions/${targetSessionId}/attachments`), {
         headers: { 'x-admin-session': adminSessionId }
       });
       if (response.ok) {
@@ -702,7 +703,7 @@ function SessionView() {
     const loadSession = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/sessions/${sessionId}`);
+        const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
         if (response.ok) {
           const data = await response.json();
           setCurrentSession(data.session);
@@ -721,7 +722,7 @@ function SessionView() {
             if (data.session.has_password) {
               const savedPassword = sessionStorage.getItem(`session_${sessionId}_password`);
               if (savedPassword) {
-                const verifyResponse = await fetch(`/api/sessions/${sessionId}/verify`, {
+                const verifyResponse = await fetch(apiUrl(`/api/sessions/${sessionId}/verify`), {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ password: savedPassword })
@@ -778,7 +779,7 @@ function SessionView() {
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/sessions/${sessionId}`);
+        const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
         if (response.ok) {
           const data = await response.json();
           setCurrentSession(data.session);
@@ -806,7 +807,7 @@ function SessionView() {
     if (!sessionId) return false;
     
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/verify`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/verify`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })
@@ -819,7 +820,7 @@ function SessionView() {
           setShowPasswordWall(false);
           sessionStorage.setItem(`session_${sessionId}_password`, password);
           
-          const sessionResponse = await fetch(`/api/sessions/${sessionId}`);
+          const sessionResponse = await fetch(apiUrl(`/api/sessions/${sessionId}`));
           if (sessionResponse.ok) {
             const data = await sessionResponse.json();
             setCards(data.cards || []);
@@ -850,7 +851,7 @@ function SessionView() {
     if (!sessionId || !isAdminVerified) return;
     
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/complete-onboarding`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/complete-onboarding`), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -871,7 +872,7 @@ function SessionView() {
     if (!sessionId || !isAdminVerified || !adminSessionId) return;
 
     const nextClient = projectData.client || currentSession?.name || '';
-    const response = await fetch(`/api/sessions/${sessionId}`, {
+    const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -920,7 +921,7 @@ function SessionView() {
       await saveProjectMetadata();
 
       for (const card of cards) {
-        const response = await fetch(`/api/sessions/${sessionId}/cards/${card.id}`, {
+        const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/${card.id}`), {
           method: 'DELETE',
           headers: { 'x-admin-session': adminSessionId },
         });
@@ -996,7 +997,7 @@ function SessionView() {
           reader.readAsDataURL(file);
         });
 
-        const response = await fetch(`/api/sessions/${sessionId}/attachments`, {
+        const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1075,7 +1076,7 @@ function SessionView() {
 
       setProjectData((prev) => ({ ...prev, background: brief }));
 
-      const response = await fetch(`/api/sessions/${sessionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1111,7 +1112,7 @@ function SessionView() {
     if (!sessionId || !isAdminVerified || !adminSessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/attachments/${attachmentId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/${attachmentId}`), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1140,7 +1141,7 @@ function SessionView() {
     if (!sessionId || !isAdminVerified || !adminSessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/attachments/${attachmentId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/${attachmentId}`), {
         method: 'DELETE',
         headers: { 'x-admin-session': adminSessionId }
       });
@@ -1162,7 +1163,7 @@ function SessionView() {
     if (!sessionId || !isAdminVerified || !adminSessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1192,7 +1193,7 @@ function SessionView() {
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/cards/${cardId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/${cardId}`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1216,7 +1217,7 @@ function SessionView() {
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/cards`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1253,7 +1254,7 @@ function SessionView() {
     if (!sessionId) return;
 
     for (const card of generatedCards) {
-      await fetch(`/api/sessions/${sessionId}/cards`, {
+      await fetch(apiUrl(`/api/sessions/${sessionId}/cards`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1267,7 +1268,7 @@ function SessionView() {
       });
     }
 
-    const response = await fetch(`/api/sessions/${sessionId}`);
+    const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
     if (response.ok) {
       const data = await response.json();
       setCards(data.cards || []);
@@ -1279,7 +1280,7 @@ function SessionView() {
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/cards/${cardId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/${cardId}`), {
         method: 'DELETE',
         headers: {
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
@@ -1301,7 +1302,7 @@ function SessionView() {
   const handleCardReorder = async (section: string, cardIds: string[]) => {
     if (!sessionId) return;
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/cards/reorder`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/reorder`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1320,7 +1321,7 @@ function SessionView() {
   const handleConnectionCreate = async (from: string, to: string) => {
     if (!sessionId) return;
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/connections`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/connections`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1341,7 +1342,7 @@ function SessionView() {
   const handleConnectionDelete = async (connectionId: string) => {
     if (!sessionId) return;
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/connections/${connectionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/connections/${connectionId}`), {
         method: 'DELETE',
         headers: {
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})

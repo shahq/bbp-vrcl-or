@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Star, Plus, Save, Download, Sparkles, Loader2, Trash2, FileText } from 'lucide-react';
 import { COLUMNS } from '../data';
 import { CardData } from '../types';
+import { apiUrl } from '../config/api';
 import { motion } from 'motion/react';
 import InfiniteCanvas from './InfiniteCanvas';
 import { UserCursors } from './UserPresence';
@@ -965,7 +966,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
             className="p-3 hover:bg-gray-100 rounded-full transition-colors text-gray-700 hover:text-gray-900"
             onClick={() => {
               if (currentSession?.id) {
-                window.open(`/api/sessions/${currentSession.id}/export/markdown`, '_blank');
+                window.open(apiUrl(`/api/sessions/${currentSession.id}/export/markdown`), '_blank');
               }
             }}
             title="Export as Markdown"
@@ -977,7 +978,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
             className="p-3 hover:bg-gray-100 rounded-full transition-colors text-gray-700 hover:text-gray-900"
             onClick={() => {
               if (currentSession?.id) {
-                window.open(`/api/sessions/${currentSession.id}/export/zip`, '_blank');
+                window.open(apiUrl(`/api/sessions/${currentSession.id}/export/zip`), '_blank');
               }
             }}
             title="Download ZIP"

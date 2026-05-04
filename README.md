@@ -72,6 +72,7 @@ GOOGLE_API_KEY=your_google_api_key
 OPENCODE_API_KEY=your_opencode_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
 ADMIN_PASSWORD=shazam!
+VITE_API_BASE_URL=
 PARTYKIT_HOST=localhost:1999
 PARTYKIT_ADMIN_SECRET=your_partykit_secret
 VITE_PARTYKIT_HOST=localhost:1999
@@ -87,6 +88,7 @@ Notes:
 - In local development, the server loads both `.env` and `.env.local`, with `.env.local` taking precedence.
 - If the selected model's provider is unavailable, the server falls back to an available provider instead of hard failing.
 - `ADMIN_PASSWORD` defaults to `shazam!` if not set.
+- Leave `VITE_API_BASE_URL` empty for same-origin local development. Set it to your backend origin when the frontend is hosted separately, for example on Firebase Hosting.
 - `VITE_PARTYKIT_HOST` is used by the browser client.
 - `PARTYKIT_HOST` is used by the server when minting admin tokens.
 
@@ -115,6 +117,24 @@ npm run build
 npm run preview
 npm run lint
 npm run clean
+```
+
+## Firebase Hosting
+
+The repo now includes `firebase.json` for SPA hosting.
+
+For the current hybrid deployment shape:
+
+- Deploy the frontend to Firebase Hosting
+- Keep the Express backend on its own host
+- Set `VITE_API_BASE_URL` to the backend origin
+- Set `VITE_PARTYKIT_HOST` to the PartyKit host used by the browser
+
+Typical deploy flow:
+
+```bash
+npm run build
+firebase deploy --only hosting
 ```
 
 ## Typical Workflow

@@ -1,3 +1,4 @@
+import { apiUrl } from '../config/api';
 import { CardData, ProjectAttachment } from '../types';
 
 export type ModelType = string;
@@ -19,7 +20,7 @@ async function requestTextCompletion(
   model: ModelType,
   responseFormat?: 'json'
 ): Promise<string> {
-  const response = await fetch("/api/ai/complete", {
+  const response = await fetch(apiUrl("/api/ai/complete"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -49,7 +50,7 @@ async function requestChatCompletion(
   message: string,
   model: ModelType
 ): Promise<string> {
-  const response = await fetch("/api/ai/chat", {
+  const response = await fetch(apiUrl("/api/ai/chat"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

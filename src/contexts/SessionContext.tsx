@@ -4,6 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { apiUrl } from '../config/api';
 import { CardData } from '../types';
 
 interface Session {
@@ -64,7 +65,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Load all sessions (admin view)
   const refreshSessions = useCallback(async () => {
     try {
-      const response = await fetch('/api/sessions');
+      const response = await fetch(apiUrl('/api/sessions'));
       if (response.ok) {
         const data = await response.json();
         setAllSessions(data.sessions || []);
@@ -78,7 +79,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const loadSession = useCallback(async (sessionId: string) => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`);
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
       if (response.ok) {
         const data = await response.json();
         setCurrentSession(data.session);
@@ -99,7 +100,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const savedPassword = sessionStorage.getItem(`session_${sessionId}_password`);
         if (savedPassword) {
           // Verify it still works
-          const verifyResponse = await fetch(`/api/sessions/${sessionId}/verify`, {
+          const verifyResponse = await fetch(apiUrl(`/api/sessions/${sessionId}/verify`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password: savedPassword })
@@ -124,7 +125,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     projectData?: { client?: string; background?: string; notes?: string }
   ): Promise<string> => {
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await fetch(apiUrl('/api/sessions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -157,7 +158,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Delete a session
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'DELETE'
       });
 
@@ -181,7 +182,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession) return false;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/verify`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/verify`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password })
@@ -207,7 +208,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/cards`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/cards`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -237,7 +238,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/cards/${cardId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/cards/${cardId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -258,7 +259,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/cards/${cardId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/cards/${cardId}`), {
         method: 'DELETE'
       });
 
@@ -277,7 +278,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/cards/reorder`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/cards/reorder`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section, card_ids: cardIds })
@@ -308,7 +309,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/connections`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/connections`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from, to })
@@ -328,7 +329,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/connections/${connectionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/connections/${connectionId}`), {
         method: 'DELETE'
       });
 
@@ -345,7 +346,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession || !isEditMode) return;
     
     try {
-      const response = await fetch(`/api/sessions/${currentSession.id}/connections/bulk`, {
+      const response = await fetch(apiUrl(`/api/sessions/${currentSession.id}/connections/bulk`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connections: newConnections })
@@ -364,9 +365,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!currentSession) return;
     
     const endpoints = {
-      zip: `/api/sessions/${currentSession.id}/export/zip`,
-      markdown: `/api/sessions/${currentSession.id}/export/markdown`,
-      json: `/api/sessions/${currentSession.id}/export/json`
+      zip: apiUrl(`/api/sessions/${currentSession.id}/export/zip`),
+      markdown: apiUrl(`/api/sessions/${currentSession.id}/export/markdown`),
+      json: apiUrl(`/api/sessions/${currentSession.id}/export/json`)
     };
     
     const extensions = {

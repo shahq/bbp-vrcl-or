@@ -4,14 +4,15 @@
 1. [Pre-Deployment Considerations](#pre-deployment-considerations)
 2. [Architecture Overview](#architecture-overview)
 3. [Firebase Client-Handoff Track](#firebase-client-handoff-track)
-4. [PartyKit Deployment](#partykit-deployment)
-5. [Express Backend Deployment](#express-backend-deployment)
-6. [Frontend Deployment](#frontend-deployment)
-7. [Testing Multiplayer](#testing-multiplayer)
-8. [Environment Configuration](#environment-configuration)
-9. [Monitoring & Debugging](#monitoring--debugging)
-10. [Troubleshooting](#troubleshooting)
-11. [Security Checklist](#security-checklist)
+4. [GitHub Collaboration And Repo Handoff](#github-collaboration-and-repo-handoff)
+5. [PartyKit Deployment](#partykit-deployment)
+6. [Express Backend Deployment](#express-backend-deployment)
+7. [Frontend Deployment](#frontend-deployment)
+8. [Testing Multiplayer](#testing-multiplayer)
+9. [Environment Configuration](#environment-configuration)
+10. [Monitoring & Debugging](#monitoring--debugging)
+11. [Troubleshooting](#troubleshooting)
+12. [Security Checklist](#security-checklist)
 
 ---
 
@@ -35,19 +36,19 @@
 - Can host on: Cloudflare Pages, Vercel, Netlify, GitHub Pages
 - Or serve from Express backend (included in current setup)
 
-**Firebase client handoff (recommended next architecture):**
+**Firebase client handoff (recommended alpha direction):**
 - Use separate Firebase projects for developer testing and client production
-- Firebase Auth should replace the current shared admin password over time
-- Firestore should replace SQLite/session JSON when moving away from persistent server disk
-- Cloud Storage should replace local attachment files
-- Keep AI calls, document extraction, exports, and privileged role changes server-side
+- Treat Firebase as the client-owned target architecture from the start, even if every subsystem is not migrated before alpha
+- Prioritize Firebase for hosting ownership, auth, data, and file-storage seams first
+- Keep AI calls, document extraction, exports, and privileged role changes server-side until the Firebase transition is complete
 
 ### 2. Domain & SSL
 
-**Recommended Setup:**
-- Main domain: `bbp.yourdomain.com` (Express + Frontend)
+**Recommended Setup For Alpha:**
+- Main domain: `bbp.yourdomain.com` (Firebase Hosting or Netlify frontend)
+- API domain: `api.bbp.yourdomain.com` (Express backend)
 - PartyKit: `partykit.yourdomain.com` or use PartyKit's subdomain
-- Both need SSL certificates (HTTPS required for WebSockets)
+- All domains need SSL certificates (HTTPS required for WebSockets)
 
 **CORS Configuration:**
 PartyKit server must accept connections from your domain:
@@ -70,32 +71,38 @@ PartyKit server must accept connections from your domain:
 - Must persist between deployments
 - Backup strategy: Regular backups of `/data/sessions/` directory
 
-### 5. Netlify Readiness
+### 5. Recommended Alpha Path
 
-Netlify is a good fit for the built Vite frontend. The current full app is not Netlify-native as-is because it depends on a long-running Express server, SQLite, and writable local files.
+The cleanest alpha path for this repo is a hybrid deployment that keeps the current backend stable while aligning ownership with the client's Firebase stack.
 
-Recommended Netlify path:
+Recommended hybrid alpha path:
 
-1. Host the frontend on Netlify.
-2. Host the current Express backend on Railway, Render, Fly.io, DigitalOcean, or another Node host with persistent storage.
-3. Proxy `/api/*` from Netlify to the backend.
-4. Keep PartyKit deployed separately.
-5. Keep a `firebase.json` hosting config available so the client can later move the same `dist/` build to Firebase Hosting.
+1. Host the frontend on Firebase Hosting or Netlify.
+2. Keep the Express backend on a Node host with persistent storage.
+3. Keep PartyKit deployed separately.
+4. Keep all frontend-to-backend and frontend-to-PartyKit URLs env-driven.
+5. Introduce Firebase project ownership, config, and seams immediately.
+6. Migrate auth, session data, and attachments to Firebase in staged steps rather than as a pre-alpha rewrite.
 
-Future Netlify-native path:
+Why this is the recommended alpha path:
 
-1. Convert Express routes into Netlify Functions.
-2. Move sessions/cards/connections from SQLite/files to Firestore.
-3. Move attachments from local disk to Firebase Cloud Storage.
-4. Keep AI provider keys available only to Functions/server code.
+- The app can launch without rewriting exports, document extraction, and AI integrations.
+- The client still gets a Firebase-owned destination architecture.
+- The next owner can migrate adapters one seam at a time instead of unwinding an emergency pre-launch rewrite.
 
-Client handoff path:
+What should move to Firebase first:
 
-1. Keep Netlify for developer previews and fast GitHub deploys while the project is still in active collaboration.
-2. Keep Firebase production owned by the client from the beginning.
-3. When the client is ready to own hosting too, deploy the same Vite build output to Firebase Hosting.
-4. Replace Netlify redirects with Firebase Hosting rewrites in `firebase.json`.
-5. Move frontend env configuration from Netlify build settings into the client's chosen Firebase/CI deploy flow.
+1. Frontend hosting ownership
+2. Admin authentication
+3. Session, card, and connection storage
+4. Attachment storage and metadata
+
+What can stay outside Firebase through alpha:
+
+1. AI provider adapters
+2. Document extraction
+3. Export generation
+4. PartyKit realtime fanout
 
 ---
 
@@ -170,11 +177,38 @@ PARTYKIT
   - Realtime canvas event fanout
 ```
 
+### Recommended Alpha Architecture
+
+Use this as the default plan unless the client requires a full Firebase migration before launch:
+
+```text
+CLIENT BROWSER
+  React App
+  - Hosted on Firebase Hosting or Netlify
+  - PartyKit WebSocket client
+  - REST client to Express backend
+
+EXPRESS BACKEND
+  - AI calls
+  - document extraction
+  - exports
+  - temporary session/data adapters where migration is incomplete
+
+FIREBASE
+  - Production project owned by client
+  - Hosting now or soon
+  - Auth introduced early
+  - Firestore and Cloud Storage introduced in stages
+
+PARTYKIT
+  - Presence and realtime sync
+```
+
 ---
 
 ## Firebase Client-Handoff Track
 
-Use this track when preparing the app for a client-owned Firebase production environment while still testing against developer-owned accounts.
+Use this track when preparing the app for a client-owned Firebase production environment while still testing against developer-owned accounts. For this project, this is the preferred handoff track, but it should be executed in staged slices rather than a single rewrite.
 
 ### Recommended Project Structure
 
@@ -184,6 +218,17 @@ Create separate Firebase projects:
 - `bbp-prod`: owned by the client, used for production workshops
 
 Do not share one Firebase project between development and production. Separate projects keep test data, test users, rules experiments, and billing isolated from the client production environment.
+
+### Recommended Rollout Strategy
+
+For this repo, use a hybrid alpha rollout:
+
+1. Deploy the current backend and PartyKit stack so the product is live.
+2. Put production ownership on the client's Firebase project as early as possible.
+3. Move frontend hosting to Firebase Hosting when the client is ready, or start there immediately if the backend remains separate.
+4. Introduce Firebase Auth and role management before final handoff.
+5. Migrate sessions, cards, connections, and attachments from local storage into Firestore and Cloud Storage in controlled stages.
+6. Keep AI, exports, and document processing server-side until the Firebase data migration is stable.
 
 ### Ownership Model
 
@@ -217,6 +262,7 @@ Optional later:
 Frontend variables use the `VITE_` prefix because they are bundled into the browser app:
 
 ```bash
+VITE_API_BASE_URL=...
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=...
@@ -403,6 +449,99 @@ Move in stages:
 
 ---
 
+## GitHub Collaboration And Repo Handoff
+
+Use this section when both the developer and client will edit the same codebase before final handoff.
+
+### Recommended Ownership Model
+
+Preferred final state:
+
+- The production repo lives in the client's GitHub organization.
+- The developer has collaborator or team access during active development and support.
+- The client owns production Firebase, production hosting, and production deploy settings.
+- The developer keeps a fork or separate dev/staging repo only if needed for experimental work.
+
+Acceptable transition state:
+
+- The repo starts under the developer account while product shape is still changing.
+- Before launch, transfer the repo to the client organization or mirror it into a client-owned repo.
+- Reconnect Netlify/Firebase/hosting deploys after transfer so production deploy credentials are client-owned.
+
+Avoid:
+
+- Production deploys tied permanently to the developer's personal GitHub account.
+- Both parties pushing directly to `main`.
+- Secrets stored in repo files.
+
+### Branch And Deploy Model
+
+Recommended branch layout:
+
+```text
+main       production
+staging    shared QA, optional
+feature/*  developer/client changes
+fix/*      small corrections
+```
+
+Recommended deploy mapping:
+
+- `main` deploys to production.
+- `staging` deploys to a shared QA environment, if used.
+- Pull requests get preview deploys through Netlify or another preview-capable host.
+- Firebase production data is used only by production deploys.
+- Firebase dev/staging data is used by preview and QA deploys.
+
+### Pull Request Rules
+
+Use pull requests even while the team is small.
+
+Minimum rules:
+
+- Require PRs before merging to `main`.
+- Require `npm run lint` to pass.
+- Require `npm run build` to pass before production merges.
+- Require at least one reviewer when the client starts editing code.
+- Protect `main` from force pushes.
+- Prefer squash merges to keep history readable.
+
+Recommended PR checklist:
+
+- [ ] Change is scoped and described clearly
+- [ ] Screenshots or preview URL included for UI changes
+- [ ] Data/security impact noted if Firebase rules, auth, uploads, or AI keys are touched
+- [ ] `npm run lint` passes
+- [ ] `npm run build` passes for deploy-impacting changes
+
+### Client Editing Workflow
+
+When the client starts touching the project:
+
+1. Give the client GitHub access through an organization team, not a shared account.
+2. Ask the client to work on feature branches.
+3. Use PR previews for visual review.
+4. Merge to `staging` for shared QA when the change needs broader testing.
+5. Merge to `main` only when the change is ready for production.
+6. Keep Firebase Security Rules and production env var changes behind explicit review.
+
+This keeps collaboration lightweight while preventing accidental production deploys.
+
+### Handoff Access Checklist
+
+- [ ] Client owns or controls the GitHub organization/repo
+- [ ] Developer has collaborator/team access with the minimum required permissions
+- [ ] `main` branch protection enabled
+- [ ] Production deploys are connected to `main`
+- [ ] Preview deploys are enabled for pull requests
+- [ ] Firebase dev/staging and production projects are clearly separated
+- [ ] Production secrets are stored only in hosting/backend provider settings
+- [ ] Client has at least one verified repo admin
+- [ ] Client has at least one verified Firebase production admin
+- [ ] Developer access removal/reduction date is agreed before final handoff
+
+---
+
 ## PartyKit Deployment
 
 ### Step 1: Create Cloudflare Account
@@ -463,7 +602,7 @@ curl https://beyond-bullet-points.{username}.partykit.dev/health
 
 ## Express Backend Deployment
 
-### Option A: Railway (Recommended for Simplicity)
+### Option A: Railway
 
 **1. Install Railway CLI:**
 ```bash
@@ -579,7 +718,7 @@ fly deploy
 
 ## Frontend Deployment
 
-### Option 1: Serve from Express (Easiest)
+### Option 1: Serve from Express
 
 The Express server already serves static files from `dist/` folder after build.
 
@@ -589,17 +728,11 @@ npm run build
 npm start
 ```
 
-### Option 2: Separate Static Hosting
+### Option 2: Netlify Frontend + Separate Backend
 
 **Build for production:**
 ```bash
 npm run build
-```
-
-**Deploy to Vercel:**
-```bash
-npm i -g vercel
-vercel --prod
 ```
 
 **Deploy to Netlify:**
@@ -628,7 +761,9 @@ netlify deploy --prod --dir=dist
 
 **Important:** If using separate static hosting, proxy `/api/*` to the backend or configure the frontend API base URL. Keep server-only keys out of Netlify browser builds.
 
-### Option 3: Firebase Hosting Handoff Target
+This is appropriate for developer previews and short-term alpha hosting. It is not a full replacement for the backend in the current architecture.
+
+### Option 3: Firebase Hosting For Client-Owned Production
 
 Firebase Hosting can serve the same Vite `dist/` output as Netlify. This is useful when the developer wants Netlify previews during active collaboration, but the client should be able to own hosting later from the same Firebase project they use for Auth, Firestore, and Storage.
 
@@ -640,10 +775,6 @@ Recommended `firebase.json`:
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
-        "source": "/api/**",
-        "function": "api"
-      },
-      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -652,7 +783,7 @@ Recommended `firebase.json`:
 }
 ```
 
-If the backend still runs outside Firebase, replace the `/api/**` function rewrite with the appropriate backend strategy. Firebase Hosting rewrites are where the Netlify `/api/*` proxy behavior gets translated during handoff.
+For the current hybrid alpha architecture, keep the backend outside Firebase Hosting and set `VITE_API_BASE_URL` to the backend origin at build time, for example `https://api.bbp.yourdomain.com`. This avoids coupling the frontend deploy to a Firebase Function before the backend migration is ready.
 
 Deploy flow:
 ```bash
@@ -664,8 +795,9 @@ Handoff notes:
 
 - Keep both `netlify.toml` and `firebase.json` in the repo once Firebase Hosting is introduced.
 - Use Netlify for developer previews if desired.
-- Use Firebase Hosting for client-owned production when the client is ready.
+- Use Firebase Hosting for client-owned production by default when the client wants Firebase ownership from the start.
 - Keep Firebase and API URLs env-driven so moving hosting providers does not require UI code changes.
+- Use the checked-in `firebase.json` for SPA rewrites and keep backend routing separate until Functions or Cloud Run are intentionally introduced.
 
 ---
 
@@ -758,6 +890,7 @@ OPENROUTER_API_KEY=your_openrouter_api_key
 # PartyKit (Production)
 PARTYKIT_HOST=beyond-bullet-points.{username}.partykit.dev
 PARTYKIT_ADMIN_SECRET=your_partykit_admin_secret
+VITE_API_BASE_URL=https://api.your-domain.com
 VITE_PARTYKIT_HOST=beyond-bullet-points.{username}.partykit.dev
 VITE_PARTYKIT_PARTY=main
 
@@ -953,6 +1086,8 @@ curl -X POST https://your-domain.com/api/sessions/bdo-test/cards \
 
 - [ ] Change default admin password (`shazam!`)
 - [ ] Use strong, unique passwords for all sessions
+- [ ] Protect the production GitHub branch
+- [ ] Require PR review and passing checks before production deploys
 - [ ] Enable HTTPS (required for WebSockets)
 - [ ] Set up environment variables securely (not in code)
 - [ ] Configure CORS properly (restrict to your domain)
