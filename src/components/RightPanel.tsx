@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Star } from 'lucide-react';
-import { CardData, ProjectAttachment } from '../types';
+import { Check, Minus, Plus, Star } from 'lucide-react';
+import { CardData, ProjectAttachment, SessionNote } from '../types';
 import { ModelType } from '../services/ai';
 import ChatPanel from './chat/ChatPanel';
 import type { ProjectBackgroundApplyMode } from './chat/types';
@@ -18,6 +18,9 @@ interface RightPanelProps {
   onUpdateProjectBackground?: (text: string) => Promise<void>;
   onSaveAndRegenerateProjectBackground?: (text: string) => Promise<void>;
   attachments?: ProjectAttachment[];
+  sessionNotes?: SessionNote[];
+  currentUser?: { userId?: string; name?: string; role?: 'admin' | 'participant' };
+  onUpdateSessionNote?: (note: SessionNote) => Promise<void>;
 }
 
 export default function RightPanel({ 
@@ -32,6 +35,9 @@ export default function RightPanel({
   onUpdateProjectBackground,
   onSaveAndRegenerateProjectBackground,
   attachments = [],
+  sessionNotes = [],
+  currentUser,
+  onUpdateSessionNote,
 }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<'notepad' | 'cards' | 'chat'>('chat');
   const [cardNotes, setCardNotes] = useState<Record<string, string>>({});
@@ -39,6 +45,8 @@ export default function RightPanel({
   const [isEditingBrief, setIsEditingBrief] = useState(false);
   const [briefDraft, setBriefDraft] = useState(projectData.background || '');
   const [briefAction, setBriefAction] = useState<'save' | 'regenerate' | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaveState, setNoteSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const card = selectedCard ? cards.find(c => c.id === selectedCard) : null;
   const selectedCardLabel = useMemo(() => {
@@ -58,6 +66,7 @@ export default function RightPanel({
     [currentSession?.id]
   );
   const currentNote = card ? cardNotes[card.id] || '' : '';
+  const sessionNote = sessionNotes[0] || null;
 
   useEffect(() => {
     try {
@@ -74,6 +83,36 @@ export default function RightPanel({
       setBriefDraft(projectData.background || '');
     }
   }, [isEditingBrief, projectData.background]);
+
+  useEffect(() => {
+    setNoteDraft(sessionNote?.content || '');
+    setNoteSaveState('idle');
+  }, [sessionNote?.content, sessionNote?.id]);
+
+  useEffect(() => {
+    if (!currentSession?.id || !onUpdateSessionNote || !isEditMode) return;
+    if ((sessionNote?.content || '') === noteDraft) return;
+
+    setNoteSaveState('saving');
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        await onUpdateSessionNote({
+          id: sessionNote?.id || 'session-notes',
+          title: sessionNote?.title || 'Notes',
+          content: noteDraft,
+          createdAt: sessionNote?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          createdBy: sessionNote?.createdBy || currentUser,
+        });
+        setNoteSaveState('saved');
+      } catch (error) {
+        console.error('Failed to save notepad:', error);
+        setNoteSaveState('error');
+      }
+    }, 650);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [currentSession?.id, currentUser, isEditMode, noteDraft, onUpdateSessionNote, sessionNote]);
 
   const startBriefEdit = () => {
     setBriefDraft(projectData.background || '');
@@ -111,7 +150,7 @@ export default function RightPanel({
 
   const isSavingBrief = briefAction !== null;
 
-  const openExport = (format: 'markdown' | 'pdf') => {
+  const openExport = (format: 'markdown' | 'pdf' | 'overview-docx') => {
     if (!currentSession?.id) return;
     window.open(apiUrl(`/api/sessions/${currentSession.id}/export/${format}`), '_blank');
   };
@@ -172,7 +211,7 @@ export default function RightPanel({
               </div>
             </div>
             <div className="shrink-0 text-gray-400">
-              {isBriefOpen ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+              {isBriefOpen ? <Minus size={18} /> : <Plus size={18} />}
             </div>
           </button>
           {isBriefOpen && onUpdateProjectBackground && !isEditingBrief && (
@@ -241,21 +280,12 @@ export default function RightPanel({
                 <span className="font-semibold text-gray-900">Export:</span>
                 <button
                   type="button"
-                  onClick={() => openExport('markdown')}
+                  onClick={() => openExport('overview-docx')}
                   className="flex items-center gap-1.5 text-blue-600 underline underline-offset-2 transition-colors hover:text-blue-700"
-                  title="Export as document"
+                  title="Download Project Overview as DOCX"
                 >
                   <img src="/doc.svg" alt="" className="h-5 w-5" />
                   Doc
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openExport('pdf')}
-                  className="flex items-center gap-1.5 text-blue-600 underline underline-offset-2 transition-colors hover:text-blue-700"
-                  title="Export as PDF"
-                >
-                  <img src="/pdf.svg" alt="" className="h-5 w-5" />
-                  PDF
                 </button>
               </div>
             </div>
@@ -344,8 +374,35 @@ export default function RightPanel({
           </div>
         )}
         {activeTab === 'notepad' && (
-          <div className="flex-1 flex items-center justify-center text-gray-500 text-lg p-8">
-            Notepad interface
+          <div className="flex-1 overflow-hidden p-6">
+            <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                <div>
+                  <div className="text-sm font-bold text-gray-900">Notes</div>
+                  <div className="text-xs text-gray-500">
+                    {isEditMode ? 'Included in DOCX and ZIP exports' : 'Read-only for this session'}
+                  </div>
+                </div>
+                <div className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  noteSaveState === 'saving' ? 'bg-amber-50 text-amber-700' :
+                  noteSaveState === 'error' ? 'bg-red-50 text-red-700' :
+                  noteSaveState === 'saved' ? 'bg-emerald-50 text-emerald-700' :
+                  'bg-gray-100 text-gray-500'
+                }`}>
+                  {noteSaveState === 'saving' ? 'Saving' : noteSaveState === 'error' ? 'Save failed' : noteSaveState === 'saved' ? 'Saved' : isEditMode ? 'Auto-save' : 'View only'}
+                </div>
+              </div>
+              <textarea
+                className="min-h-0 flex-1 resize-none p-4 text-sm leading-relaxed text-gray-700 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                placeholder={isEditMode ? 'Capture workshop notes, decisions, follow-ups, or source details...' : 'No notes yet.'}
+                value={noteDraft}
+                disabled={!isEditMode || !onUpdateSessionNote}
+                onChange={(event) => setNoteDraft(event.target.value)}
+              />
+              <div className="border-t border-gray-100 px-4 py-2 text-xs text-gray-400">
+                {noteDraft.length > 0 ? `${noteDraft.length} characters` : 'Empty'}
+              </div>
+            </div>
           </div>
         )}
       </div>

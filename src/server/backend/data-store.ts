@@ -25,7 +25,19 @@ import {
   getFirestoreConnectionsBySession,
   saveAllFirestoreConnections,
 } from "../data/firestore/connections";
-import type { CardStore, ConnectionStore, SessionStore } from "./types";
+import {
+  deleteFirestoreNote,
+  getFirestoreNotes,
+  replaceFirestoreNotes,
+  upsertFirestoreNote,
+} from "../data/firestore/notes";
+import {
+  deleteNote,
+  readNotes,
+  replaceNotes,
+  upsertNote,
+} from "../notes";
+import type { CardStore, ConnectionStore, NoteStore, SessionStore } from "./types";
 
 const sqliteSessionStore: SessionStore = {
   generateSessionId: sessions.generateSessionId,
@@ -57,6 +69,13 @@ const sqliteConnectionStore: ConnectionStore = {
   },
 };
 
+const sqliteNoteStore: NoteStore = {
+  listNotes: async (...args) => readNotes(...args),
+  upsertNote: async (...args) => upsertNote(...args),
+  deleteNote: async (...args) => deleteNote(...args),
+  replaceNotes: async (...args) => replaceNotes(...args),
+};
+
 const firestoreSessionStore: SessionStore = {
   generateSessionId: sessions.generateSessionId,
   createSession: createFirestoreSession,
@@ -83,6 +102,13 @@ const firestoreConnectionStore: ConnectionStore = {
   deleteConnection: async (id, sessionId) => deleteFirestoreConnection(sessionId || "", id),
   deleteConnectionsForCard: async (cardId, sessionId) => deleteFirestoreConnectionsForCard(sessionId || "", cardId),
   saveAllConnections: saveAllFirestoreConnections,
+};
+
+const firestoreNoteStore: NoteStore = {
+  listNotes: getFirestoreNotes,
+  upsertNote: upsertFirestoreNote,
+  deleteNote: deleteFirestoreNote,
+  replaceNotes: replaceFirestoreNotes,
 };
 
 export function getSessionStore(): SessionStore {
@@ -116,6 +142,18 @@ export function getConnectionStore(): ConnectionStore {
       return sqliteConnectionStore;
     case "firestore":
       return firestoreConnectionStore;
+    default:
+      throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
+  }
+}
+
+export function getNoteStore(): NoteStore {
+  const provider = process.env.DATA_STORE_PROVIDER || "sqlite";
+  switch (provider) {
+    case "sqlite":
+      return sqliteNoteStore;
+    case "firestore":
+      return firestoreNoteStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }

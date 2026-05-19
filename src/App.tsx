@@ -16,7 +16,7 @@ import { UserProfilePrompt, UserProfile } from './components/UserProfilePrompt';
 import { ActiveUsers, ConnectionStatus } from './components/UserPresence';
 import { usePartyKit } from './hooks/usePartyKit';
 import type { LiveConnection } from '../party/index';
-import { CardData, ConnectionData, ProjectAttachment } from './types';
+import { CardData, ConnectionData, ProjectAttachment, SessionNote } from './types';
 import { generateBriefFromUploads, generateCards, ModelType } from './services/ai';
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -419,6 +419,7 @@ function SessionView() {
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelType>('minimax-m2.5');
   const [attachments, setAttachments] = useState<ProjectAttachment[]>([]);
+  const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [isGeneratingBriefFromUploads, setIsGeneratingBriefFromUploads] = useState(false);
   const [isSavingProjectChanges, setIsSavingProjectChanges] = useState(false);
@@ -609,6 +610,7 @@ function SessionView() {
     sendPresenceUpdate,
     sendAdminKick,
     sendProjectUpdate,
+    sendNoteUpdate,
   } = usePartyKit({
     sessionId: canConnectPartyKit ? partySessionId : null,
     userId: partyUserId,
@@ -666,6 +668,13 @@ function SessionView() {
         background: updates.project_background ?? prev.background,
         notes: updates.project_notes ?? prev.notes,
       }));
+    },
+    onNoteUpdate: (note) => {
+      setSessionNotes((prev) => {
+        const index = prev.findIndex((existing) => existing.id === note.id);
+        if (index === -1) return [...prev, note];
+        return prev.map((existing) => existing.id === note.id ? note : existing);
+      });
     },
     onKicked: (message) => {
       showToast(message);
@@ -729,6 +738,46 @@ function SessionView() {
     }
   }, [getEditRequestHeaders]);
 
+  const loadNotes = useCallback(async (targetSessionId: string) => {
+    try {
+      const response = await fetch(apiUrl(`/api/sessions/${targetSessionId}/notes`));
+      if (response.ok) {
+        const data = await response.json();
+        setSessionNotes(data.notes || []);
+      }
+    } catch (error) {
+      console.error('Error loading notes:', error);
+    }
+  }, []);
+
+  const handleUpdateSessionNote = useCallback(async (note: SessionNote) => {
+    if (!sessionId || (!isAdminVerified && !isEditMode)) {
+      return;
+    }
+
+    const response = await fetch(apiUrl(`/api/sessions/${sessionId}/notes/${encodeURIComponent(note.id)}`), {
+      method: 'PUT',
+      headers: getEditRequestHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(getEditRequestBody({
+        title: note.title,
+        content: note.content,
+        createdBy: note.createdBy,
+      })),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to save notes');
+    }
+
+    const data = await response.json();
+    setSessionNotes((prev) => {
+      const index = prev.findIndex((existing) => existing.id === data.note.id);
+      if (index === -1) return [...prev, data.note];
+      return prev.map((existing) => existing.id === data.note.id ? data.note : existing);
+    });
+    sendNoteUpdate(data.note);
+  }, [getEditRequestBody, getEditRequestHeaders, isAdminVerified, isEditMode, sendNoteUpdate, sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
     setWorkspaceView('canvas');
@@ -746,6 +795,7 @@ function SessionView() {
             setCards(data.cards || []);
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
+            await loadNotes(sessionId);
             setProjectData({
               client: data.session.project_client || data.session.name || '',
               background: data.session.project_background || '',
@@ -767,6 +817,7 @@ function SessionView() {
                     setCards(data.cards || []);
                     setConnections(data.connections || []);
                     await loadAttachments(sessionId);
+                    await loadNotes(sessionId);
                     setProjectData({
                       client: data.session.project_client || data.session.name || '',
                       background: data.session.project_background || '',
@@ -786,6 +837,7 @@ function SessionView() {
               setCards(data.cards || []);
               setConnections(data.connections || []);
               await loadAttachments(sessionId);
+              await loadNotes(sessionId);
               setProjectData({
                 client: data.session.project_client || data.session.name || '',
                 background: data.session.project_background || '',
@@ -805,7 +857,7 @@ function SessionView() {
     };
     
     loadSession();
-  }, [sessionId, isAdminVerified, adminSessionId, loadAttachments]);
+  }, [sessionId, isAdminVerified, adminSessionId, loadAttachments, loadNotes]);
 
   useEffect(() => {
     if (!sessionId || isAdminVerified) return;
@@ -823,6 +875,7 @@ function SessionView() {
             setCards(data.cards || []);
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
+            await loadNotes(sessionId);
             setProjectData({
               client: data.session.project_client || data.session.name || '',
               background: data.session.project_background || '',
@@ -837,7 +890,7 @@ function SessionView() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [sessionId, isAdminVerified, currentSession?.onboarding_completed, showPasswordWall, loadAttachments]);
+  }, [sessionId, isAdminVerified, currentSession?.onboarding_completed, showPasswordWall, loadAttachments, loadNotes]);
 
   const verifyPassword = async (password: string): Promise<boolean> => {
     if (!sessionId) return false;
@@ -862,6 +915,7 @@ function SessionView() {
             setCards(data.cards || []);
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
+            await loadNotes(sessionId);
             setProjectData({
               client: data.session.project_client || data.session.name || '',
               background: data.session.project_background || '',
@@ -1109,6 +1163,68 @@ function SessionView() {
     } catch (error: any) {
       console.error('Error uploading files:', error);
       showToast(error.message || 'Failed to upload files');
+    } finally {
+      setIsUploadingAttachments(false);
+    }
+  };
+
+  const handleUploadSessionArchive = async (file: File | null) => {
+    if (!file) return;
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
+
+    const isZip = file.name.toLowerCase().endsWith('.zip')
+      || file.type === 'application/zip'
+      || file.type === 'application/x-zip-compressed';
+
+    if (!isZip) {
+      showToast('Upload a ZIP session archive');
+      return;
+    }
+
+    const confirmed = window.confirm('Importing this ZIP will replace the current session brief, cards, connections, notes, and attachment metadata. Continue?');
+    if (!confirmed) return;
+
+    setIsUploadingAttachments(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/import/zip`), {
+        method: 'POST',
+        headers: getEditRequestHeaders({
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify(getEditRequestBody({
+          name: file.name,
+          dataUrl,
+        })),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to import session ZIP' }));
+        throw new Error(errorData.error || 'Failed to import session ZIP');
+      }
+
+      const data = await response.json();
+      setCurrentSession(data.session);
+      setCards(data.cards || []);
+      setConnections(data.connections || []);
+      setAttachments(data.attachments || []);
+      setSessionNotes(data.notes || []);
+      setProjectData({
+        client: data.session?.project_client || data.session?.name || '',
+        background: data.session?.project_background || '',
+        notes: data.session?.project_notes || '',
+      });
+      setWorkspaceView('canvas');
+      showToast('Session ZIP imported');
+    } catch (error: any) {
+      console.error('Error importing session ZIP:', error);
+      showToast(error.message || 'Failed to import session ZIP');
     } finally {
       setIsUploadingAttachments(false);
     }
@@ -1653,6 +1769,13 @@ function SessionView() {
                 currentSession={currentSession}
                 isEditMode={isEditMode}
                 attachments={attachments}
+                sessionNotes={sessionNotes}
+                currentUser={userProfile ? {
+                  userId: userProfile.id,
+                  name: userProfile.name,
+                  role: isAdminVerified ? 'admin' : 'participant',
+                } : undefined}
+                onUpdateSessionNote={handleUpdateSessionNote}
                 onUpdateProjectBackground={handleUpdateProjectBackground}
                 onSaveAndRegenerateProjectBackground={isEditMode ? handleRegenerateCards : undefined}
               />
@@ -1662,6 +1785,7 @@ function SessionView() {
               {isAdminVerified || currentSession.onboarding_completed ? (
                 <NewProject 
                   projectName={currentSession.name}
+                  sessionId={currentSession.id}
                   onRenameProject={handleRenameProject}
                   onStart={handleStartProject}
                   onSaveChanges={handleSaveProjectChanges}
@@ -1677,6 +1801,7 @@ function SessionView() {
                   isUploadingAttachments={isUploadingAttachments}
                   isGeneratingBriefFromUploads={isGeneratingBriefFromUploads}
                   onUploadFiles={handleUploadFiles}
+                  onUploadSessionArchive={handleUploadSessionArchive}
                   onGenerateBriefFromUploads={handleGenerateBriefFromUploads}
                   onUseAttachmentText={handleUseAttachmentText}
                   onRenameAttachment={handleRenameAttachment}

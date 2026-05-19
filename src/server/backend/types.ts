@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { CreateSessionOptions, CreateSessionResult, Session } from "../sessions";
 import type { Card } from "../cards";
 import type { Connection } from "../connections";
-import type { CardFrontmatter } from "../files";
+import type { SessionNote } from "../../types";
 
 export interface AdminSession {
   id: string;
@@ -110,6 +110,13 @@ export interface AttachmentStore {
   deleteAllSessionAttachments(sessionId: string): Promise<void>;
 }
 
+export interface NoteStore {
+  listNotes(sessionId: string): Promise<SessionNote[]>;
+  upsertNote(sessionId: string, note: Partial<SessionNote>): Promise<SessionNote>;
+  deleteNote(sessionId: string, noteId: string): Promise<boolean>;
+  replaceNotes(sessionId: string, notes: Partial<SessionNote>[]): Promise<SessionNote[]>;
+}
+
 export interface CurrentBackend {
   adminAuth: AdminAuthProvider;
   sessions: SessionStore;
@@ -117,4 +124,5 @@ export interface CurrentBackend {
   connections: ConnectionStore;
   sessionFiles: SessionFileStore;
   attachments: AttachmentStore;
+  notes: NoteStore;
 }

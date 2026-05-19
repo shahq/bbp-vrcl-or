@@ -7,8 +7,12 @@ import { extractAttachmentContent, type ProjectAttachment } from "./src/server/d
 import { getCurrentBackend } from "./src/server/backend/current";
 import type { AdminSession } from "./src/server/backend/types";
 import { serializeCardFile, type CardFrontmatter } from "./src/server/files";
+import type { SessionNote } from "./src/types";
 import archiver from "archiver";
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import fs from "fs";
+import JSZip from "jszip";
+import yaml from "js-yaml";
 import path from "path";
 
 dotenv.config({ path: ".env" });
@@ -135,8 +139,280 @@ function createSimplePdfBuffer(title: string, markdown: string): Buffer {
   return Buffer.from([...chunks, xref].join(""), "binary");
 }
 
+function safeDownloadName(value: string): string {
+  return value
+    .trim()
+    .replace(/[^a-z0-9-_]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "project-overview";
+}
+
+function textToDocxParagraphs(text: string): Paragraph[] {
+  const paragraphs = text.trim()
+    ? text.trim().split(/\n{2,}/)
+    : ["No project overview has been written yet."];
+
+  return paragraphs.map((paragraph) =>
+    new Paragraph({
+      spacing: { after: 240 },
+      children: paragraph.split(/\n/).flatMap((line, index) => [
+        ...(index > 0 ? [new TextRun({ text: "", break: 1 })] : []),
+        new TextRun({ text: line }),
+      ]),
+    })
+  );
+}
+
+function notesToMarkdown(sessionNotes: SessionNote[]) {
+  const usableNotes = sessionNotes.filter((note) => note.content.trim());
+  if (usableNotes.length === 0) return "";
+
+  let markdown = "## Notes\n\n";
+  for (const note of usableNotes) {
+    if (note.title && note.title !== "Notes") {
+      markdown += `### ${note.title}\n\n`;
+    }
+    markdown += `${note.content.trim()}\n\n`;
+  }
+  return markdown;
+}
+
+async function createOverviewDocxBuffer(session: {
+  id: string;
+  name: string;
+  project_client?: string;
+  project_background?: string;
+  project_notes?: string;
+}): Promise<Buffer> {
+  const title = session.project_client || session.name || "Project Overview";
+  const children: Paragraph[] = [
+    new Paragraph({
+      text: title,
+      heading: HeadingLevel.TITLE,
+      spacing: { after: 360 },
+    }),
+    new Paragraph({
+      text: "Project Overview",
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 240 },
+    }),
+    ...textToDocxParagraphs(session.project_background || ""),
+  ];
+
+  if (session.project_notes?.trim()) {
+    children.push(
+      new Paragraph({
+        text: "Additional Notes",
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 360, after: 240 },
+      }),
+      ...textToDocxParagraphs(session.project_notes)
+    );
+  }
+
+  const doc = new Document({
+    sections: [{ children }],
+  });
+
+  return Packer.toBuffer(doc);
+}
+
+async function createSessionDocxBuffer(
+  session: {
+    id: string;
+    name: string;
+    project_client?: string;
+    project_background?: string;
+    project_notes?: string;
+  },
+  sessionCards: Array<{
+    id: string;
+    section: string;
+    content?: string;
+    order_index: number;
+  }>,
+  sessionConnections: Array<{
+    from_card_id: string;
+    to_card_id: string;
+  }>,
+  sessionNotes: SessionNote[] = []
+): Promise<Buffer> {
+  const sectionOrder = ["place", "role", "challenge", "point_a", "point_b", "change", "story"];
+  const sectionTitles: Record<string, string> = {
+    place: "Place: Your Setting",
+    role: "Role: Your Part",
+    challenge: "Challenge: The Obstacle",
+    point_a: "Point A: Where You Are",
+    point_b: "Point B: Where You Need to Be",
+    change: "Change: The Transformation",
+    story: "Story: The Journey",
+  };
+  const title = session.project_client || session.name || "Beyond Bullet Points";
+  const children: Paragraph[] = [
+    new Paragraph({
+      text: `Beyond Bullet Points: ${title}`,
+      heading: HeadingLevel.TITLE,
+      spacing: { after: 360 },
+    }),
+  ];
+
+  if (session.project_client || session.project_background || session.project_notes) {
+    children.push(new Paragraph({
+      text: "Project Context",
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 240 },
+    }));
+
+    if (session.project_client) {
+      children.push(new Paragraph({
+        spacing: { after: 160 },
+        children: [
+          new TextRun({ text: "Client: ", bold: true }),
+          new TextRun({ text: session.project_client }),
+        ],
+      }));
+    }
+
+    if (session.project_background) {
+      children.push(new Paragraph({
+        text: "Background",
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 160, after: 160 },
+      }), ...textToDocxParagraphs(session.project_background));
+    }
+
+    if (session.project_notes) {
+      children.push(new Paragraph({
+        text: "Notes",
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 160, after: 160 },
+      }), ...textToDocxParagraphs(session.project_notes));
+    }
+  }
+
+  children.push(new Paragraph({
+    text: "The Story",
+    heading: HeadingLevel.HEADING_1,
+    spacing: { before: 360, after: 240 },
+  }));
+
+  for (const section of sectionOrder) {
+    const sectionCards = sessionCards
+      .filter((card) => card.section === section)
+      .sort((a, b) => a.order_index - b.order_index);
+    if (sectionCards.length === 0) continue;
+
+    children.push(new Paragraph({
+      text: sectionTitles[section] || section,
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 240, after: 160 },
+    }));
+
+    sectionCards.forEach((card, index) => {
+      children.push(new Paragraph({
+        spacing: { after: 160 },
+        children: [
+          new TextRun({ text: `${index + 1}. `, bold: true }),
+          new TextRun({ text: card.content || "" }),
+        ],
+      }));
+    });
+  }
+
+  if (sessionConnections.length > 0) {
+    children.push(new Paragraph({
+      text: "Connections",
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 360, after: 240 },
+    }));
+
+    for (const connection of sessionConnections) {
+      const fromCard = sessionCards.find((card) => card.id === connection.from_card_id);
+      const toCard = sessionCards.find((card) => card.id === connection.to_card_id);
+      if (!fromCard || !toCard) continue;
+
+      children.push(new Paragraph({
+        spacing: { after: 120 },
+        children: [
+          new TextRun({ text: fromCard.section, bold: true }),
+          new TextRun({ text: " -> " }),
+          new TextRun({ text: toCard.section, bold: true }),
+        ],
+      }));
+    }
+  }
+
+  const usableNotes = sessionNotes.filter((note) => note.content.trim());
+  if (usableNotes.length > 0) {
+    children.push(new Paragraph({
+      text: "Notes",
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 360, after: 240 },
+    }));
+
+    for (const note of usableNotes) {
+      if (note.title && note.title !== "Notes") {
+        children.push(new Paragraph({
+          text: note.title,
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 160, after: 160 },
+        }));
+      }
+      children.push(...textToDocxParagraphs(note.content));
+    }
+  }
+
+  const doc = new Document({
+    sections: [{ children }],
+  });
+
+  return Packer.toBuffer(doc);
+}
+
+interface ImportedSessionMetadata {
+  name?: string;
+  projectClient?: string;
+  projectBackground?: string;
+  projectNotes?: string;
+}
+
+interface ImportedCard {
+  id: string;
+  section: string;
+  content: string;
+  order: number;
+  starred: boolean;
+}
+
+function parseArchiveDataUrl(dataUrl: string): Buffer | null {
+  const match = String(dataUrl).match(/^data:.*?;base64,(.*)$/);
+  return match ? Buffer.from(match[1], "base64") : null;
+}
+
+function getArchiveRoot(fileNames: string[]) {
+  const sessionFile = fileNames.find((name) => !name.includes("..") && name.endsWith("/session.json"));
+  if (!sessionFile) return null;
+  return sessionFile.slice(0, -"session.json".length);
+}
+
+function parseImportedCard(cardText: string, fallbackOrder: number): ImportedCard | null {
+  const match = cardText.match(/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/);
+  if (!match) return null;
+
+  const frontmatter = yaml.load(match[1]) as Partial<CardFrontmatter> | null;
+  if (!frontmatter?.id || !frontmatter.section) return null;
+
+  return {
+    id: String(frontmatter.id),
+    section: String(frontmatter.section),
+    content: match[2].trim(),
+    order: Number.isFinite(Number(frontmatter.order)) ? Number(frontmatter.order) : fallbackOrder,
+    starred: frontmatter.starred === true,
+  };
+}
+
 async function startServer() {
-  const { adminAuth, sessions, cards, connections, sessionFiles, attachments } = getCurrentBackend();
+  const { adminAuth, sessions, cards, connections, sessionFiles, attachments, notes } = getCurrentBackend();
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
   const distDir = path.join(process.cwd(), "dist");
@@ -648,6 +924,86 @@ async function startServer() {
     }
   });
 
+  app.get("/api/sessions/:id/notes", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const sessionNotes = await notes.listNotes(id);
+      res.json({ notes: sessionNotes });
+    } catch (error: any) {
+      console.error("Error listing notes:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/sessions/:id/notes", requireEditPermission, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const note = await notes.upsertNote(id, {
+        id: req.body.id || "session-notes",
+        title: req.body.title || "Notes",
+        content: req.body.content || "",
+        createdBy: req.body.createdBy,
+      });
+
+      res.status(201).json({ note });
+    } catch (error: any) {
+      console.error("Error saving note:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/sessions/:id/notes/:noteId", requireEditPermission, async (req, res) => {
+    try {
+      const { id, noteId } = req.params;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const note = await notes.upsertNote(id, {
+        id: noteId,
+        title: req.body.title || "Notes",
+        content: req.body.content || "",
+        createdBy: req.body.createdBy,
+      });
+
+      res.json({ note });
+    } catch (error: any) {
+      console.error("Error updating note:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/sessions/:id/notes/:noteId", requireEditPermission, async (req, res) => {
+    try {
+      const { id, noteId } = req.params;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const success = await notes.deleteNote(id, noteId);
+      res.json({ success });
+    } catch (error: any) {
+      console.error("Error deleting note:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Delete session (Admin only)
   app.delete("/api/sessions/:id", adminAuth.requireAdminAuth, async (req, res) => {
     try {
@@ -673,6 +1029,160 @@ async function startServer() {
       res.json({ success });
     } catch (error: any) {
       console.error("Error deleting session:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/sessions/:id/import/zip", requireEditPermission, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, dataUrl } = req.body;
+
+      if (!name || !String(name).toLowerCase().endsWith(".zip") || !dataUrl) {
+        return res.status(400).json({ error: "A ZIP session archive is required" });
+      }
+
+      const session = await sessions.getSession(id);
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const archiveBuffer = parseArchiveDataUrl(dataUrl);
+      if (!archiveBuffer) {
+        return res.status(400).json({ error: "Invalid ZIP upload payload" });
+      }
+
+      const zip = await JSZip.loadAsync(archiveBuffer);
+      const fileNames = Object.keys(zip.files).filter((fileName) => !zip.files[fileName].dir);
+
+      if (fileNames.some((fileName) => path.isAbsolute(fileName) || fileName.split("/").includes(".."))) {
+        return res.status(400).json({ error: "Unsafe ZIP archive paths are not allowed" });
+      }
+
+      const root = getArchiveRoot(fileNames);
+      if (!root) {
+        return res.status(400).json({ error: "ZIP archive is missing session.json" });
+      }
+
+      const sessionJson = await zip.file(`${root}session.json`)?.async("string");
+      if (!sessionJson) {
+        return res.status(400).json({ error: "ZIP archive is missing session.json" });
+      }
+
+      const importedSession = JSON.parse(sessionJson) as ImportedSessionMetadata;
+      const cardFiles = fileNames
+        .filter((fileName) => fileName.startsWith(`${root}cards/`) && fileName.endsWith(".md"))
+        .sort();
+      const importedCards = (
+        await Promise.all(cardFiles.map(async (fileName, index) => {
+          const cardText = await zip.file(fileName)?.async("string");
+          return cardText ? parseImportedCard(cardText, index) : null;
+        }))
+      ).filter((card): card is ImportedCard => Boolean(card));
+
+      if (importedCards.length === 0) {
+        return res.status(400).json({ error: "ZIP archive does not contain importable card markdown files" });
+      }
+
+      const connectionsJson = await zip.file(`${root}connections.json`)?.async("string");
+      const importedConnections = connectionsJson ? JSON.parse(connectionsJson) : [];
+      if (!Array.isArray(importedConnections)) {
+        return res.status(400).json({ error: "connections.json must contain an array" });
+      }
+
+      const attachmentsJson = await zip.file(`${root}attachments.json`)?.async("string");
+      const importedAttachments = attachmentsJson ? JSON.parse(attachmentsJson) : [];
+      if (!Array.isArray(importedAttachments)) {
+        return res.status(400).json({ error: "attachments.json must contain an array" });
+      }
+
+      const notesJson = await zip.file(`${root}notes.json`)?.async("string");
+      const importedNotes = notesJson ? JSON.parse(notesJson) : [];
+      if (!Array.isArray(importedNotes)) {
+        return res.status(400).json({ error: "notes.json must contain an array" });
+      }
+
+      const existingCards = await cards.getCardsBySession(id);
+      for (const card of existingCards) {
+        await cards.deleteCard(id, card.id);
+      }
+
+      await connections.saveAllConnections(id, []);
+
+      await sessions.updateSession(id, {
+        name: importedSession.name || session.name,
+        project_client: importedSession.projectClient ?? session.project_client,
+        project_background: importedSession.projectBackground ?? session.project_background,
+        project_notes: importedSession.projectNotes ?? session.project_notes,
+        onboarding_completed: true,
+      });
+
+      sessionFiles.writeSessionMetadata(id, {
+        id,
+        name: importedSession.name || session.name,
+        projectClient: importedSession.projectClient ?? session.project_client,
+        projectBackground: importedSession.projectBackground ?? session.project_background,
+        projectNotes: importedSession.projectNotes ?? session.project_notes,
+        createdAt: session.created_at,
+        updatedAt: new Date().toISOString(),
+      });
+
+      for (const card of importedCards) {
+        await cards.createCard(id, card.id, card.section, card.content, card.order, card.starred);
+      }
+
+      const importedCardIds = new Set(importedCards.map((card) => card.id));
+      const safeConnections = importedConnections.filter((connection: any) =>
+        connection
+        && importedCardIds.has(connection.from)
+        && importedCardIds.has(connection.to)
+      );
+      await connections.saveAllConnections(id, safeConnections);
+
+      await attachments.deleteAllSessionAttachments(id);
+      for (const attachment of importedAttachments) {
+        if (attachment?.id) {
+          await attachments.saveAttachment(id, {
+            ...attachment,
+            relativePath: attachment.relativePath || "",
+          });
+        }
+      }
+
+      await notes.replaceNotes(id, importedNotes);
+
+      const updatedSession = await sessions.getSession(id);
+      const updatedCards = await cards.getCardsBySession(id);
+      const updatedConnections = await connections.getConnectionsBySession(id);
+      const updatedAttachments = await attachments.listAttachments<ProjectAttachment>(id);
+      const updatedNotes = await notes.listNotes(id);
+
+      res.json({
+        session: updatedSession ? {
+          id: updatedSession.id,
+          name: updatedSession.name,
+          created_at: updatedSession.created_at,
+          updated_at: updatedSession.updated_at,
+          project_client: updatedSession.project_client,
+          project_background: updatedSession.project_background,
+          project_notes: updatedSession.project_notes,
+          onboarding_completed: updatedSession.onboarding_completed,
+          has_password: !!updatedSession.password_hash,
+        } : null,
+        cards: updatedCards,
+        connections: updatedConnections.map((connection) => ({
+          id: connection.id,
+          from: connection.from_card_id,
+          to: connection.to_card_id,
+          threadId: connection.thread_id || undefined,
+          color: connection.color || undefined,
+          ownerUserId: connection.owner_user_id || undefined,
+        })),
+        attachments: updatedAttachments,
+        notes: updatedNotes,
+      });
+    } catch (error: any) {
+      console.error("Error importing session ZIP:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -868,6 +1378,7 @@ async function startServer() {
 
     const sessionCards = await cards.getCardsBySession(id);
     const sessionConnections = await connections.getConnectionsBySession(id);
+    const sessionNotes = await notes.listNotes(id);
 
     let markdown = `# Beyond Bullet Points: ${id}\n\n`;
     markdown += `## Session: ${session.name}\n\n`;
@@ -925,6 +1436,8 @@ async function startServer() {
       markdown += `\n`;
     }
 
+    markdown += notesToMarkdown(sessionNotes);
+
     return { session, markdown };
   };
 
@@ -941,6 +1454,7 @@ async function startServer() {
       const sessionCards = await cards.getCardsBySession(id);
       const sessionConnections = await connections.getConnectionsBySession(id);
       const sessionAttachments = await attachments.listAttachments<ProjectAttachment>(id);
+      const sessionNotes = await notes.listNotes(id);
 
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="${id}.zip"`);
@@ -974,6 +1488,15 @@ async function startServer() {
       archive.append(JSON.stringify(sessionAttachments, null, 2), {
         name: `${id}/attachments.json`,
       });
+
+      archive.append(JSON.stringify(sessionNotes, null, 2), {
+        name: `${id}/notes.json`,
+      });
+
+      const notesMarkdown = notesToMarkdown(sessionNotes);
+      if (notesMarkdown) {
+        archive.append(notesMarkdown, { name: `${id}/Notes.md` });
+      }
 
       archive.append(
         JSON.stringify(
@@ -1059,6 +1582,41 @@ async function startServer() {
     }
   });
 
+  app.get("/api/sessions/:id/export/docx", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const sessionCards = await cards.getCardsBySession(id);
+      const sessionConnections = await connections.getConnectionsBySession(id);
+      const sessionNotes = await notes.listNotes(id);
+      const docx = await createSessionDocxBuffer(
+        {
+          id: session.id,
+          name: session.name,
+          project_client: session.project_client,
+          project_background: session.project_background,
+          project_notes: session.project_notes,
+        },
+        sessionCards,
+        sessionConnections,
+        sessionNotes
+      );
+      const fileName = `${safeDownloadName(session.project_client || session.name || id)}-canvas.docx`;
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      res.send(docx);
+    } catch (error: any) {
+      console.error("Error exporting session DOCX:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Export session as PDF
   app.get("/api/sessions/:id/export/pdf", async (req, res) => {
     try {
@@ -1079,6 +1637,33 @@ async function startServer() {
     }
   });
 
+  app.get("/api/sessions/:id/export/overview-docx", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const docx = await createOverviewDocxBuffer({
+        id: session.id,
+        name: session.name,
+        project_client: session.project_client,
+        project_background: session.project_background,
+        project_notes: session.project_notes,
+      });
+      const fileName = `${safeDownloadName(session.project_client || session.name || id)}-overview.docx`;
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+      res.send(docx);
+    } catch (error: any) {
+      console.error("Error exporting project overview DOCX:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Export session as JSON
   app.get("/api/sessions/:id/export/json", async (req, res) => {
     try {
@@ -1091,6 +1676,7 @@ async function startServer() {
       
       const sessionCards = await cards.getCardsBySession(id);
       const sessionConnections = await connections.getConnectionsBySession(id);
+      const sessionNotes = await notes.listNotes(id);
       
       const exportData = {
         session: {
@@ -1118,7 +1704,8 @@ async function startServer() {
           threadId: c.thread_id || undefined,
           color: c.color || undefined,
           ownerUserId: c.owner_user_id || undefined
-        }))
+        })),
+        notes: sessionNotes
       };
       
       res.setHeader('Content-Type', 'application/json');

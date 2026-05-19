@@ -18,6 +18,19 @@ export interface ConnectionData {
   ownerUserId?: string;
 }
 
+export interface SessionNote {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: {
+    userId?: string;
+    name?: string;
+    role?: 'admin' | 'participant';
+  };
+}
+
 export interface Project {
   id: string;
   name: string;

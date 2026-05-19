@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import PartySocket from 'partysocket';
 import type { Message, UserPresence, LiveConnection } from '../../party/index';
-import type { CardData, ConnectionData } from '../types';
+import type { CardData, ConnectionData, SessionNote } from '../types';
 import {
   PARTYKIT_HOST,
   PARTYKIT_HTTP_PROTOCOL,
@@ -25,6 +25,7 @@ interface UsePartyKitOptions {
   onUserLeave?: (userId: string) => void;
   onKicked?: (message: string) => void;
   onProjectUpdate?: (updates: { project_client?: string; project_background?: string; project_notes?: string }) => void;
+  onNoteUpdate?: (note: SessionNote) => void;
 }
 
 interface UsePartyKitReturn {
@@ -45,6 +46,7 @@ interface UsePartyKitReturn {
   sendCursorMove: (x: number, y: number) => void;
   sendAdminKick: (connectionId: string, userId?: string | null) => void;
   sendProjectUpdate: (updates: { project_client?: string; project_background?: string; project_notes?: string }) => void;
+  sendNoteUpdate: (note: SessionNote) => void;
   reconnect: () => void;
 }
 
@@ -64,6 +66,7 @@ export function usePartyKit({
   onUserLeave,
   onKicked,
   onProjectUpdate,
+  onNoteUpdate,
 }: UsePartyKitOptions): UsePartyKitReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -88,6 +91,7 @@ export function usePartyKit({
     onUserLeave,
     onKicked,
     onProjectUpdate,
+    onNoteUpdate,
   });
   const userPresenceRef = useRef<UserPresence>({
     id: userId,
@@ -121,6 +125,7 @@ export function usePartyKit({
       onUserLeave,
       onKicked,
       onProjectUpdate,
+      onNoteUpdate,
     };
   }, [
     onCardCreate,
@@ -131,6 +136,7 @@ export function usePartyKit({
     onConnectionDelete,
     onCursorMove,
     onKicked,
+    onNoteUpdate,
     onProjectUpdate,
     onUserLeave,
   ]);
@@ -221,6 +227,12 @@ export function usePartyKit({
           case 'connection:delete':
             if (data.userId !== userId && callbacksRef.current.onConnectionDelete) {
               callbacksRef.current.onConnectionDelete(data.connectionId);
+            }
+            break;
+
+          case 'note:update':
+            if (data.userId !== userId && callbacksRef.current.onNoteUpdate) {
+              callbacksRef.current.onNoteUpdate(data.note);
             }
             break;
 
@@ -451,6 +463,18 @@ export function usePartyKit({
     }
   }, [userId]);
 
+  const sendNoteUpdate = useCallback((note: SessionNote) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      const message: Message = {
+        type: 'note:update',
+        note,
+        timestamp: Date.now(),
+        userId,
+      };
+      socketRef.current.send(JSON.stringify(message));
+    }
+  }, [userId]);
+
   const reconnect = useCallback(() => {
     if (socketRef.current) {
       kickedMessageRef.current = null;
@@ -476,6 +500,7 @@ export function usePartyKit({
     sendCursorMove,
     sendAdminKick,
     sendProjectUpdate,
+    sendNoteUpdate,
     reconnect,
   };
 }

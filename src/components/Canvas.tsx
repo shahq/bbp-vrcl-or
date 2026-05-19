@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Star, Plus, Save, Download, Sparkles, Loader2, Trash2, FileText } from 'lucide-react';
+import { Star, Plus, Download, Sparkles, Loader2, Trash2, FileText } from 'lucide-react';
 import { COLUMNS } from '../data';
 import { CardData, ConnectionData, Section } from '../types';
 import { apiUrl } from '../config/api';
@@ -1244,29 +1244,31 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
             Assemble My Story
           </button>
         )}
-        <div className="flex items-center gap-3 bg-white/90 backdrop-blur-sm rounded-full shadow-xl border border-gray-200/50 p-3">
+        <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full shadow-xl border border-gray-200/50 px-3 py-2">
           <button 
-            className="p-3 hover:bg-gray-100 rounded-full transition-colors text-gray-700 hover:text-gray-900"
+            className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900"
             onClick={() => {
               if (currentSession?.id) {
-                window.open(apiUrl(`/api/sessions/${currentSession.id}/export/markdown`), '_blank');
+                window.open(apiUrl(`/api/sessions/${currentSession.id}/export/docx`), '_blank');
               }
             }}
-            title="Export as Markdown"
+            title="Save as Doc"
           >
-            <Save size={24} />
+            <img src="/doc.svg" alt="" className="h-5 w-5" />
+            <span>Save Doc</span>
           </button>
           <div className="w-px h-6 bg-gray-200"></div>
           <button 
-            className="p-3 hover:bg-gray-100 rounded-full transition-colors text-gray-700 hover:text-gray-900"
+            className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900"
             onClick={() => {
               if (currentSession?.id) {
                 window.open(apiUrl(`/api/sessions/${currentSession.id}/export/zip`), '_blank');
               }
             }}
-            title="Download ZIP"
+            title="Save Canvas"
           >
-            <Download size={24} />
+            <Download size={18} />
+            <span>Save Canvas</span>
           </button>
         </div>
       </div>

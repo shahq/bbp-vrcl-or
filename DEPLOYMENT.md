@@ -714,7 +714,8 @@ Then verify in the UI:
 4. edit cards
 5. upload document
 6. generate brief from uploads
-7. export zip / markdown / json
+7. export docx / zip / markdown / json
+8. import an exported ZIP into an existing session
 
 ### Historical alternatives
 
@@ -1156,7 +1157,8 @@ const corsHeaders = {
 - [ ] Test admin login
 - [ ] Create test session
 - [ ] Test multiplayer with 2 browsers
-- [ ] Verify exports work (ZIP, Markdown)
+- [ ] Verify exports work (DOCX, ZIP, Markdown)
+- [ ] Verify exported ZIP restore works against a disposable session
 
 **Within 24 hours:**
 - [ ] Monitor error logs

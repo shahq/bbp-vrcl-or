@@ -1,13 +1,70 @@
 # Beyond Bullet Points - MVP Implementation Plan
 
-**Status:** Phase 4 COMPLETE ✅ | Guest Brief + Threaded Story Polish Active
+**Status:** Phase 4 COMPLETE ✅ | Guest Brief, Export, and Restore Polish Active
 
-**Last Updated:** 2026-05-16
+**Last Updated:** 2026-05-19
 
 ## Goal
 Create a working prototype (MVP) for the Beyond Bullet Points Exercise that Shahid can share and test among peers and BDO executives. The tool helps structure presentations using the "Beyond Bulletpoints" methodology through an AI-assisted canvas interface.
 
 ---
+
+## Notepad Implementation Plan (2026-05-19)
+
+Build a shared canvas notepad that works for admins and guests with edit access, persists with session data, syncs across live participants, and exports as `Notes`.
+
+- [x] Keep notepad data separate from onboarding `project_notes` so workshop notes do not get mixed with the project brief.
+- [x] Add a `SessionNote` model with a default `session-notes` record and future support for multiple note blocks.
+- [x] Add a backend `NoteStore` seam alongside session/card/connection/attachment stores.
+- [x] Implement local filesystem notes storage as `data/sessions/<sessionId>/notes.json`.
+- [x] Implement Firestore notes storage under each session document.
+- [x] Add note API routes:
+  - `GET /api/sessions/:id/notes`
+  - `POST /api/sessions/:id/notes`
+  - `PUT /api/sessions/:id/notes/:noteId`
+  - `DELETE /api/sessions/:id/notes/:noteId`
+- [x] Replace the right-panel Notepad placeholder with an editable shared Notes block.
+- [x] Use existing admin/session-password edit permission checks for note writes.
+- [x] Add debounced autosave and visible save state in the notepad UI.
+- [x] Broadcast note updates through PartyKit so admin and guest canvases stay in sync.
+- [x] Include notes in full DOCX export under a top-level `Notes` section.
+- [x] Include notes in ZIP export as `notes.json` and `Notes.md`.
+- [x] Include notes in JSON and Markdown exports.
+- [x] Restore notes when importing an exported session ZIP, while keeping older ZIPs without notes importable.
+- [ ] Add browser smoke coverage for simultaneous admin/guest note editing once the collaboration test harness exists.
+- [ ] Manually test notes across admin and guest browser sessions before marking the notepad fully accepted.
+- [ ] Decide whether card-specific local notes should be promoted into persisted/exported session data or removed to avoid confusion with the shared notepad.
+
+## Shahid Checklist Reconciliation (2026-05-19)
+
+Compared against the working TODO list and added missing follow-ups below.
+
+### Completed
+- [x] Import ZIP files back into sessions through **Upload Session**. Current mode replaces the current persistent session from a ZIP archive; create-new-session and merge modes remain separate follow-ups.
+- [x] Preserve exported ZIP archives as portable saved copies of a session.
+- [x] Fix story generation so **Assemble My Story** creates one current-user story output instead of creating duplicate story clutter after refresh.
+- [x] Remove the old canvas chat **Generate background description** starter button.
+- [x] Let visitors with edit access return to the brief and edit it.
+- [x] Add optional password protection for sessions, including admin-created generated session passwords.
+- [x] Keep card notes as a local card detail area and remove the old synthesize action from that panel.
+- [x] Collapse the project overview by default in the canvas chat/right panel.
+- [x] Replace unclear chevrons with clearer plus/minus expand controls for project overview.
+- [x] Add Shahid mockup-style **Save Doc** and **Save Canvas** controls to the canvas footer.
+- [x] Add overview DOCX export from the project overview flow.
+- [x] Add unsaved-change handling around project overview edits in the brief flow.
+- [x] Start the Create Project Brief chat with an invitation before the questionnaire begins.
+- [x] Move the Create Project Brief invitation from center stage into the chat flow after the first user action.
+- [x] Add threaded, color-coded story connectors with per-user story assembly.
+- [x] Fix first-run card generation so questionnaire fields such as "You are" feed the initial card generation path.
+- [x] Add shared Notes panel implementation, storage, realtime sync, and export support.
+- [x] Add Word document export as the visible primary document export path.
+
+### Follow-ups Added
+- [ ] Chat should explicitly ask "Would you like me to add this to the overview?" before applying generated overview text.
+- [ ] Make questionnaire/prompts appear as highlighted agent-style prompt blocks above the chat bar.
+- [ ] Let users drag an existing connector off a card to disconnect it.
+- [ ] Convert the Project Overview section into a reusable component Shahid can use for client onboarding.
+- [ ] Add focused notepad QA for admin/guest sync, ZIP restore, DOCX export, and empty-state behavior.
 
 ## Project Overview
 
@@ -38,14 +95,14 @@ When connected in sequence, these elements form a complete transformation story.
 4. **Players** access the session and collaborate on the canvas
 5. **Cards** are organized across the 6 columns to build the narrative
 6. **Connections** between cards create color-coded story flows, with separate threads for parallel paths
-7. **Export** the final story as ZIP, Markdown, or JSON
+7. **Export** the final story as DOCX, ZIP, Markdown, or JSON
 
 ### Key Features
 - 🔐 **Password Protection:** Optional session-level passwords for sensitive projects
 - 🤖 **AI Integration:** Generate ideas through the server AI provider seam
 - 🎨 **Visual Canvas:** Drag-and-drop interface with 6 columns
 - 🔗 **Story Flows:** Connect cards to create narrative sequences, including parallel color-coded threads
-- 📤 **Export:** Download sessions as AI-readable Markdown files
+- 📤 **Export/Restore:** Download sessions as DOCX, ZIP, Markdown, JSON, or PDF, and restore the current session from exported ZIP archives
 - 👥 **Collaboration:** Real-time multiplayer through PartyKit
 - 🧭 **Deterministic Briefing:** Configurable questionnaire turns owner-defined answers into a project overview
 
@@ -78,6 +135,7 @@ When connected in sequence, these elements form a complete transformation story.
   - Session has password and they enter it correctly
 - Never see the initial setup-only onboarding while a session is incomplete
 - Can return from a completed canvas to the Create Project Brief page and edit Project Overview or notes when they have edit access
+- Can manage uploaded brief documents and regenerate cards when they have edit access
 
 **Future Roles (Post-MVP)**
 - Lead Guest: Could do onboarding if delegated by admin
@@ -253,8 +311,11 @@ POST /api/sessions/:id/connections/bulk  # Bulk update (requires auth or passwor
 **Export:**
 ```
 GET /api/sessions/:id/export/zip       # Download ZIP (public)
+GET /api/sessions/:id/export/docx      # Download formatted full-session Word document (public)
+GET /api/sessions/:id/export/overview-docx # Download formatted overview Word document (public)
 GET /api/sessions/:id/export/markdown # Download markdown (public)
 GET /api/sessions/:id/export/json      # Download JSON (public)
+POST /api/sessions/:id/import/zip      # Replace current session from exported ZIP (requires admin auth or session password)
 ```
 
 ---
@@ -404,7 +465,8 @@ GET /api/sessions/:id/export/json      # Download JSON (public)
 1. **Guest Brief Access** ✅
    - [x] Guests with edit access can use Return to brief from a completed canvas
    - [x] Guests can save Project Overview and notes edits
-   - [x] Admin-only project naming, attachment management, and card regeneration controls stay admin-only
+   - [x] Guests with edit access can manage uploads, synthesize briefs from uploads, and regenerate cards
+   - [x] Admin-only project naming and session management controls stay admin-only
 
 2. **Deterministic Create Project Brief Questionnaire** ✅
    - [x] Replace the old guided Q&A prompt flow with a configured multi-step questionnaire
@@ -429,22 +491,41 @@ GET /api/sessions/:id/export/json      # Download JSON (public)
 5. **Remaining Thread Management Polish**
    - [ ] Expose whole-thread selection/deletion in addition to current single-connection deletion
    - [x] Consider a lightweight thread legend or affordance if users need clearer thread identity
+   - [ ] Let users drag an existing connector off a card to disconnect it
 
 6. **Project Overview Document Export**
-   - [ ] Replace the current browser-generated `.doc` HTML download with a real Word `.docx` export
-   - [ ] Support the export from both the Create Project Brief / overview screen and the canvas overview panel
-   - [ ] Prefer a server-side document generator such as `docx` so exported files are valid Office Open XML, not HTML renamed as `.doc`
-   - [ ] Include project/session name, Project Overview text, and optionally Additional Notes in a clean handoff-friendly template
-   - [ ] Decide whether guests with edit access can download directly from the same endpoint, using the existing session edit permission seam
+   - [x] Replace the current browser-generated `.doc` HTML download with a real Word `.docx` export
+   - [x] Support the export from both the Create Project Brief / overview screen and the canvas overview panel
+   - [x] Prefer a server-side document generator such as `docx` so exported files are valid Office Open XML, not HTML renamed as `.doc`
+   - [x] Include project/session name, Project Overview text, and optionally Additional Notes in a clean handoff-friendly template
+   - [x] Decide whether guests with edit access can download directly from the same endpoint, using the existing session edit permission seam
+   - [x] Add full-canvas/session `.docx` export for cards, project context, notes, and connections while keeping Markdown export available as a hidden/API route
 
 7. **ZIP Import / Session Restore**
-   - [ ] Add an upload/import flow that can ingest the same ZIP format currently produced by `GET /api/sessions/:id/export/zip`
-   - [ ] Treat exported ZIPs as portable project archives that can recreate or update a session
-   - [ ] Parse `session.json`, card markdown files, `connections.json`, and `attachments.json` when present
-   - [ ] Decide import modes: create a new session from ZIP, replace the current session, or merge into the current session
-   - [ ] Validate ZIP structure, reject unsafe paths, and avoid overwriting unrelated files or sessions
-   - [ ] Preserve IDs where safe so connections still point to the right cards; remap IDs when importing into an existing session to avoid collisions
+   - [x] Add an upload/import flow that can ingest the same ZIP format currently produced by `GET /api/sessions/:id/export/zip`
+   - [x] Treat exported ZIPs as portable project archives that can update the current session
+   - [x] Parse `session.json`, card markdown files, `connections.json`, and `attachments.json` when present
+   - [x] Implement replace-current-session import mode
+   - [ ] Add create-new-session-from-ZIP import mode
+   - [ ] Add merge-into-current-session import mode
+   - [x] Validate ZIP structure, reject unsafe paths, and avoid overwriting unrelated files or sessions
+   - [x] Preserve IDs in replace-current-session mode so connections still point to the right cards
+   - [ ] Remap IDs when a future merge import mode is added to avoid collisions
    - [ ] Document which attachment storage modes can restore original binaries versus metadata/extracted text only
+
+8. **Shared Canvas Notepad** ✅
+   - [x] Add a shared notepad to the canvas right panel for admins and guests with edit access
+   - [x] Persist notes separately from onboarding `project_notes`
+   - [x] Sync note updates through PartyKit
+   - [x] Export notes in DOCX, ZIP, Markdown, and JSON
+   - [x] Restore notes from ZIP imports
+   - [ ] Complete manual admin/guest/browser smoke testing
+   - [ ] Decide the long-term relationship between local card notes and exported shared notes
+
+9. **Project Overview Reuse**
+   - [ ] Extract the Project Overview display/edit/export section into a reusable component
+   - [ ] Keep brief-generation, brief-editing, and canvas overview usage on the same component contract
+   - [ ] Preserve current guest edit-permission behavior when extracting the component
 
 ### Phase 5: UX Enhancements
 **Priority: MEDIUM**
@@ -504,6 +585,8 @@ FILE_STORAGE_PATH=./data/sessions
 - [x] Guests with edit access can return to the completed brief and save overview/notes edits
 - [x] Cards save to individual markdown files
 - [x] ZIP export working (backend)
+- [x] DOCX export working (overview and full session)
+- [x] ZIP replace-current-session import working (backend and UI)
 - [x] Markdown export working (backend)
 - [x] JSON export working (backend)
 - [x] Double-click editing on cards
@@ -514,8 +597,9 @@ FILE_STORAGE_PATH=./data/sessions
 - [ ] Help icons on all columns
 - [ ] Fullscreen mode
 - [x] Connect export buttons to backend
-- [ ] Real `.docx` Project Overview export from overview and canvas screens
-- [ ] Import exported ZIP archives to create, restore, or merge sessions
+- [x] Real `.docx` Project Overview export from overview and canvas screens
+- [x] Import exported ZIP archives to replace the current session
+- [ ] Import exported ZIP archives to create new sessions or merge into current sessions
 - [x] Real-time sync (2+ users see changes) - ✅ PartyKit implemented
 - [x] Color-coded thread metadata for parallel story paths
 - [x] Per-user story assembly
@@ -550,6 +634,6 @@ FILE_STORAGE_PATH=./data/sessions
 
 ---
 
-**Last Updated:** 2026-05-16
-**Status:** Phase 4 COMPLETE ✅ | Guest Brief + Threaded Story Polish Active
-**Next Step:** Finish thread management polish, especially whole-thread selection/deletion and any needed thread identity affordance
+**Last Updated:** 2026-05-19
+**Status:** Phase 4 COMPLETE ✅ | Guest Brief, Export, and Restore Polish Active
+**Next Step:** Finish thread management polish, ZIP import merge/new-session modes, and attachment binary restore documentation

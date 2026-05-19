@@ -3,6 +3,7 @@ import { getFirestoreDb } from "../../firebase/app";
 import { generateSessionId, generatePassword, hashPassword, type CreateSessionOptions, type CreateSessionResult, type Session } from "../../sessions";
 import { getFirestoreCardsBySession } from "./cards";
 import { getFirestoreConnectionsBySession } from "./connections";
+import { getFirestoreNotes } from "./notes";
 import { sessionDocToModel } from "./shared";
 
 const COLLECTION_NAME = "sessions";
@@ -92,6 +93,7 @@ export async function deleteFirestoreSession(id: string): Promise<boolean> {
   const batch = getFirestoreDb().batch();
   const cards = await getFirestoreCardsBySession(id);
   const connections = await getFirestoreConnectionsBySession(id);
+  const notes = await getFirestoreNotes(id);
 
   cards.forEach((card) => {
     batch.delete(getCollection().doc(id).collection("cards").doc(card.id));
@@ -99,6 +101,10 @@ export async function deleteFirestoreSession(id: string): Promise<boolean> {
 
   connections.forEach((connection) => {
     batch.delete(getCollection().doc(id).collection("connections").doc(connection.id));
+  });
+
+  notes.forEach((note) => {
+    batch.delete(getCollection().doc(id).collection("notes").doc(note.id));
   });
 
   batch.delete(getCollection().doc(id));

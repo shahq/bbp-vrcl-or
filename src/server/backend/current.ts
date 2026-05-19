@@ -1,7 +1,7 @@
 import * as files from "../files";
 import { getAdminAuthProvider } from "../auth";
 import { getAttachmentStore } from "./attachments";
-import { getCardStore, getConnectionStore, getSessionStore } from "./data-store";
+import { getCardStore, getConnectionStore, getNoteStore, getSessionStore } from "./data-store";
 import type { CurrentBackend } from "./types";
 
 export function getCurrentBackend(): CurrentBackend {
@@ -15,5 +15,6 @@ export function getCurrentBackend(): CurrentBackend {
       getSessionDir: files.getSessionDir,
     },
     attachments: getAttachmentStore(),
+    notes: getNoteStore(),
   };
 }

@@ -1,5 +1,5 @@
 import type * as Party from "partykit/server";
-import type { CardData, ConnectionData } from "../src/types";
+import type { CardData, ConnectionData, SessionNote } from "../src/types";
 
 type ConnectionRole = "admin" | "participant";
 
@@ -31,6 +31,7 @@ export type Message =
   | { type: "card:reorder"; section: string; cardIds: string[]; timestamp: number; userId: string }
   | { type: "connection:create"; connection: ConnectionData; timestamp: number; userId: string }
   | { type: "connection:delete"; connectionId: string; timestamp: number; userId: string }
+  | { type: "note:update"; note: SessionNote; timestamp: number; userId: string }
   | { type: "presence:update"; user: UserPresence; timestamp: number }
   | { type: "cursor:move"; userId: string; x: number; y: number; timestamp: number }
   | { type: "user:join"; user: UserPresence; timestamp: number }
@@ -292,6 +293,7 @@ export default class SessionServer implements Party.Server {
         case "card:reorder":
         case "connection:create":
         case "connection:delete":
+        case "note:update":
           this.room.broadcast(message, [sender.id]);
           break;
 

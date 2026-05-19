@@ -9,8 +9,11 @@ Beyond Bullet Points is a collaborative storytelling canvas for building present
 - Sessions can be open or password-protected.
 - Admins complete the initial "New Project" onboarding with client, background, and notes.
 - The Create Project Brief page uses a configurable deterministic questionnaire before AI turns answers into a project overview. See [PROJECT_BRIEF_QUESTIONNAIRE.md](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/PROJECT_BRIEF_QUESTIONNAIRE.md).
-- Admins can upload source documents, import extracted summaries or text, and generate a project brief from uploads.
-- Completed canvases can return to the brief for save-only edits; admins can also regenerate cards behind a confirmation.
+- Admins and guests with edit access can upload source documents, rename uploads, import extracted summaries or text, and generate a project brief from all usable uploads.
+- Completed canvases can return to the brief for edits; admins and guests with edit access can save changes and regenerate cards behind a confirmation.
+- Project overviews and full canvases can be exported as real `.docx` Word documents. Sessions can also be exported as ZIP, Markdown, JSON, or PDF.
+- Exported session ZIP files can be uploaded back into an existing session as a replace-current-session restore path.
+- The canvas right panel includes a shared **Notes** notepad for admins and guests with edit access. Notes autosave, sync in realtime, and export with the session.
 - The canvas organizes ideas into 7 sections:
   - `place`
   - `role`
@@ -34,6 +37,8 @@ Beyond Bullet Points is a collaborative storytelling canvas for building present
 - Express
 - SQLite via `better-sqlite3`
 - Markdown card files with YAML frontmatter
+- Word document export via `docx`
+- ZIP archive import via `jszip`
 - PartyKit + `partysocket` for real-time collaboration
 - AI support through a server-owned provider layer for Gemini, the Opencode proxy, and OpenRouter
 
@@ -51,6 +56,8 @@ Session data is stored locally under `data/`:
 - `data/sessions/<sessionId>/session.json` - session metadata
 - `data/sessions/<sessionId>/cards/*.md` - card content
 - `data/sessions/<sessionId>/connections.json` - saved card connections, including thread, color, and owner metadata
+- `data/sessions/<sessionId>/attachments.json` - uploaded document metadata, extracted text, summaries, and source notes when available
+- `data/sessions/<sessionId>/notes.json` - shared canvas notepad records exported as `Notes`
 
 ## Local Setup
 
@@ -147,7 +154,7 @@ GOOGLE_API_KEY=your_google_api_key
 
 In this alpha mode:
 
-- Firestore persists sessions, cards, connections, attachment metadata, extracted text, summaries, and source notes
+- Firestore persists sessions, cards, connections, shared notes, attachment metadata, extracted text, summaries, and source notes
 - uploaded document binaries are temporary processing artifacts and are not durably stored
 - Cloud Storage can be enabled later by switching `ATTACHMENT_STORE_PROVIDER=firebase`
 
@@ -213,14 +220,17 @@ npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
 4. Complete the New Project onboarding if the session is still in setup; upload documents and generate or write the project overview brief as needed.
 5. Generate the initial canvas cards, then add and connect cards across the canvas.
 6. Use **Assemble My Story** to concatenate the current user's connected cards in column order into a story card.
-7. Use **Return to brief** as an admin or guest with edit access to save overview edits; admins can also regenerate cards with confirmation.
-8. Export the session as ZIP, Markdown, or JSON when the story is ready.
+7. Use the right-panel **Notepad** tab to capture shared workshop notes.
+8. Use **Return to brief** as an admin or guest with edit access to save overview edits, upload documents, synthesize the overview, or regenerate cards with confirmation.
+9. Export the overview or canvas as DOCX, or export the whole session as ZIP, Markdown, JSON, or PDF when the story is ready.
+10. Use **Upload Session** on the Create Project Brief page to replace the current session from a previously exported session ZIP.
 
 ## Multiplayer Notes
 
 - Users pick a display name and color when joining a session.
 - Admins can edit any session without entering a session password.
 - Password-protected sessions require the correct session password for edit access.
+- Guests with edit access can manage brief documents and regenerate cards, but they still cannot access the admin dashboard, create/delete sessions, or complete first-time onboarding.
 - Live cursors, presence, and card updates sync in real time through PartyKit.
 - Thread colors distinguish participant-owned story paths across connected cards.
 - Each participant can have one active linear story thread across the ordered columns: `place` -> `role` -> `challenge` -> `point_a` -> `point_b` -> `change` -> `story`.
@@ -239,9 +249,27 @@ The server exposes endpoints for:
 - Attachment upload, metadata updates, deletion, and document extraction
 - Card CRUD and card reordering
 - Connection CRUD and bulk save, including optional thread metadata
-- Exporting sessions as ZIP, Markdown, or JSON
+- Shared session note read/write endpoints
+- Exporting project overviews as DOCX
+- Exporting full sessions as ZIP, DOCX, Markdown, PDF, or JSON
+- Importing exported session ZIPs into the current session as a replace-current-session restore
 
 ## Recent Changes
+
+### Shared Notepad and Exportable Notes (2026-05-19)
+- **Canvas notepad:** The right-panel **Notepad** tab is now a real shared note block instead of a placeholder. Admins and guests with edit access can update it; read-only users can view it.
+- **Autosave and realtime sync:** Notepad edits autosave through the existing session edit-permission path and broadcast through PartyKit so open admin and guest canvases stay aligned.
+- **Dedicated notes storage:** Notes are stored separately from onboarding `project_notes` through a `NoteStore` seam, with local `notes.json` and Firestore implementations.
+- **Notes in exports:** Full DOCX exports include a top-level **Notes** section. ZIP exports include `notes.json` and `Notes.md`; Markdown and JSON exports also include notes.
+- **ZIP restore:** Imported ZIP archives restore notes when `notes.json` is present and remain backward compatible with older archives that did not include notes.
+
+### Guest Brief, DOCX Export, and ZIP Restore (2026-05-19)
+- **Guest document workflows:** Guests with edit access can upload source documents, rename uploads, edit source notes, delete uploads, synthesize the project overview from all usable uploads, save brief changes, and regenerate cards.
+- **All-upload synthesis:** Brief generation now sends every usable uploaded source to the AI prompt instead of silently capping at the first eight uploads.
+- **Real DOCX exports:** The Project Overview page, canvas overview panel, and canvas save controls now use server-generated `.docx` files through the `docx` package instead of browser-generated HTML `.doc` files or visible Markdown exports.
+- **Canvas save controls:** The canvas footer now exposes labeled **Save Doc** and **Save Canvas** actions. **Save Doc** exports a formatted Word document; **Save Canvas** downloads the portable ZIP.
+- **Session ZIP restore:** The Create Project Brief page includes **Upload Session** for exported ZIP archives. Current implementation replaces the current session's metadata, cards, connections, shared notes, and attachment metadata; merge/new-session import modes remain follow-ups.
+- **Attachment restore limitation:** ZIP restore currently restores attachment metadata, extracted text, summaries, source notes, and shared notepad records. Original uploaded binaries are only restorable when they were present in the exported ZIP.
 
 ### Per-user Threaded Story Assembly (2026-05-18)
 - **Personal story threads:** Connections now use owner-aware identity and metadata so multiple users can connect the same card pair without overwriting or blocking each other.
@@ -261,7 +289,7 @@ The server exposes endpoints for:
 
 ### Project Overview + Canvas Polish (2026-04-29)
 - **Upload-generated brief:** New Project uploads can now be synthesized into a project overview brief through the AI provider seam, using extracted text, summaries, and per-upload source notes.
-- **Brief edit flow:** Admins can save overview changes without generating a canvas, return to the brief from an existing canvas, or regenerate cards behind a destructive confirmation.
+- **Brief edit flow:** The brief can be saved without generating a canvas; completed canvases can return to the brief; edit-mode users can regenerate cards behind a destructive confirmation.
 - **Canvas brief panel:** The right panel now shows a collapsible `Project overview [project name]` accordion instead of disconnected hero/challenge labels.
 - **Chat workspace polish:** The chat context block is hidden for now, the composer is more compact, and selected cards appear as small context pills such as `Challenge-2`.
 - **Selection behavior:** Clicking empty canvas space clears the selected card and hides the composer pill.

@@ -1,9 +1,11 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { UploadCloud, Save, Loader2, FileText, Image as ImageIcon, Pencil, Trash2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, CircleDashed, Sparkles, Download } from 'lucide-react';
 import type { ProjectAttachment } from '../types';
+import { apiUrl } from '../config/api';
 
 interface NewProjectProps {
   projectName: string;
+  sessionId?: string;
   onRenameProject: (name: string) => Promise<void>;
   onStart: () => void;
   onSaveChanges: () => Promise<void>;
@@ -19,6 +21,7 @@ interface NewProjectProps {
   isUploadingAttachments: boolean;
   isGeneratingBriefFromUploads: boolean;
   onUploadFiles: (files: FileList | null) => void;
+  onUploadSessionArchive: (file: File | null) => void;
   onGenerateBriefFromUploads: () => Promise<void>;
   onUseAttachmentText: (attachment: ProjectAttachment, target: 'background' | 'notes', source: 'summary' | 'full') => void;
   onRenameAttachment: (attachmentId: string, name: string) => Promise<void>;
@@ -30,6 +33,7 @@ interface NewProjectProps {
 
 export default function NewProject({
   projectName,
+  sessionId,
   onRenameProject,
   onStart,
   onSaveChanges,
@@ -45,6 +49,7 @@ export default function NewProject({
   isUploadingAttachments,
   isGeneratingBriefFromUploads,
   onUploadFiles,
+  onUploadSessionArchive,
   onGenerateBriefFromUploads,
   onUseAttachmentText,
   onRenameAttachment,
@@ -54,6 +59,7 @@ export default function NewProject({
   canManageAttachments = true,
 }: NewProjectProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sessionArchiveInputRef = useRef<HTMLInputElement | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
   const [expandedAttachments, setExpandedAttachments] = useState<Record<string, boolean>>({});
@@ -136,33 +142,8 @@ export default function NewProject({
   };
 
   const handleDownloadOverviewDoc = () => {
-    const overview = projectData.background.trim();
-    const title = projectData.client.trim() || projectName || 'Project Overview';
-    const safeFileName = `${title || 'project-overview'}-overview`
-      .replace(/[^a-z0-9-_]+/gi, '-')
-      .replace(/^-+|-+$/g, '')
-      .toLowerCase() || 'project-overview';
-    const escapeHtml = (value: string) =>
-      value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    const paragraphs = (overview || 'No project overview has been written yet.')
-      .split(/\n{2,}/)
-      .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
-      .join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.5;color:#111827;}h1{font-size:24px;}p{font-size:12pt;margin:0 0 12pt;}</style></head><body><h1>${escapeHtml(title)}</h1>${paragraphs}</body></html>`;
-    const blob = new Blob([html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${safeFileName}.doc`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (!sessionId) return;
+    window.open(apiUrl(`/api/sessions/${sessionId}/export/overview-docx`), '_blank');
   };
 
   return (
@@ -218,12 +199,29 @@ export default function NewProject({
             accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
             onChange={(e) => onUploadFiles(e.target.files)}
           />
+          <input
+            ref={sessionArchiveInputRef}
+            type="file"
+            className="hidden"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            onChange={(e) => {
+              onUploadSessionArchive(e.target.files?.[0] || null);
+              e.target.value = '';
+            }}
+          />
         <button
           disabled={isGenerating || isUploadingAttachments}
           onClick={() => fileInputRef.current?.click()}
           className="w-full flex items-center justify-center gap-3 px-6 py-4 border border-gray-300 rounded-none bg-gray-50 hover:bg-gray-100 font-semibold text-base transition-colors disabled:opacity-50"
         >
           Upload Docs <UploadCloud size={22} />
+        </button>
+        <button
+          disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads}
+          onClick={() => sessionArchiveInputRef.current?.click()}
+          className="mt-3 w-full flex items-center justify-center gap-3 px-6 py-4 border border-gray-300 rounded-none bg-white hover:bg-gray-50 font-semibold text-base transition-colors disabled:opacity-50"
+        >
+          Upload Session <UploadCloud size={22} />
         </button>
         <button
           disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads || !hasUsableUploads}

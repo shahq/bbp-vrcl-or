@@ -14,7 +14,7 @@ This file captures the current deployed staging environment, the alpha tradeoffs
 - Backend runtime: Cloud Run
 - Realtime: PartyKit
 - Session/card/connection persistence: Firestore
-- Attachment metadata and extracted text: Firestore
+- Attachment metadata, extracted text, and shared notes: Firestore
 - Original uploaded file binaries: temporary only
 - Admin auth: shared password
 
@@ -51,10 +51,15 @@ GOOGLE_API_KEY
 - PartyKit multiplayer / realtime canvas sync
 - generate cards
 - edit / add / delete cards
-- upload documents
+- admin and guest-with-edit-access brief editing
+- upload, rename, note, and delete briefing documents
 - extract text and summaries from uploads
-- generate project brief from uploads
-- export markdown / json / zip
+- generate project brief from all usable uploads
+- regenerate cards from the completed brief as an edit-mode user
+- capture shared canvas notes in the right-panel Notepad
+- export overview and full canvas as DOCX
+- export docx / markdown / json / zip
+- replace the current session from an exported ZIP archive, including shared notes when present
 
 ## Intentional alpha tradeoffs
 
@@ -70,20 +75,22 @@ Implication:
 `ATTACHMENT_STORE_PROVIDER=ephemeral` means:
 
 - uploaded files are kept only long enough for server-side extraction
-- extracted text, summaries, source notes, and metadata persist in Firestore
+- extracted text, summaries, source notes, shared notes, and metadata persist in Firestore
 - original file binaries may disappear when the backend instance is replaced, restarted, or redeployed
 
 Implication:
 - uploads are usable for briefing and card generation
 - uploads are not yet client-grade durable storage
 
-### 3. ZIP export is honest about temporary uploads
+### 3. ZIP export/import is honest about temporary uploads
 
 If original upload binaries are no longer available:
 
 - `attachments.json` still exists in the export
 - extracted text and summaries still persist
 - the ZIP can include a note explaining that original binaries were temporary
+- importing the ZIP restores attachment metadata, extracted text, summaries, source notes, and shared notepad records
+- importing the ZIP cannot restore original binaries unless they were present in the archive
 
 ## Smoke test checklist
 
@@ -97,8 +104,13 @@ Use this after backend or frontend deploys:
 6. Open the same session in a second browser/incognito window
 7. Confirm realtime sync works
 8. Upload a document
-9. Generate a project brief from uploads
-10. Export markdown, json, and zip
+9. Rename the upload and add a source note
+10. Generate a project brief from uploads
+11. Return to canvas and confirm a guest with edit access can return to brief and regenerate cards
+12. Add text in the canvas **Notepad** tab and confirm another admin/guest browser receives the update
+13. Export overview DOCX, full canvas DOCX, markdown, json, and zip
+14. Confirm the full canvas DOCX and ZIP include **Notes**
+15. Upload the exported ZIP through **Upload Session** and confirm the current session is replaced with the archive contents, including notes
 
 ## Client handoff discussion points
 

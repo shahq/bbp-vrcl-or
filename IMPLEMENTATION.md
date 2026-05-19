@@ -185,6 +185,69 @@ Refined threaded connections from global thread assembly into user-owned, color-
 
 ---
 
+## 2026-05-19 — Guest Brief, DOCX Export, and ZIP Restore
+
+### Summary
+Expanded the completed-session brief workspace from admin-only document management into an edit-permission-based collaboration flow. Guests with session edit access can now manage uploaded brief sources, synthesize the project overview, save/regenerate cards, export real Word documents, and restore the current session from an exported ZIP archive.
+
+### Decisions
+- **Edit permission is the capability seam:** Attachment list/upload/rename/note/delete and session ZIP import now use the existing admin-or-session-password permission path instead of hardcoded admin checks.
+- **Guest regeneration is allowed after onboarding:** Guests with edit access can regenerate cards from the brief behind the same destructive confirmation used for admins.
+- **All uploads feed synthesis:** `generateBriefFromUploads()` now includes every usable attachment in the prompt context, with per-document excerpt limits, instead of silently slicing to the first eight uploads.
+- **Real Word exports live server-side:** Overview and full-canvas Word exports use the `docx` package. Markdown export remains available as an API route, but the visible canvas document action now downloads `.docx`.
+- **ZIP import starts with replace-current-session:** `Upload Session` restores an exported ZIP into the current session by replacing metadata, cards, connections, and attachment metadata. New-session and merge import modes remain future work.
+- **Attachment binary restore is storage-dependent:** ZIP import restores attachment metadata, extracted text, summaries, and notes. Original binaries are only recoverable when present in the exported ZIP.
+
+### Files changed
+| File | What changed |
+|------|-------------|
+| `server.ts` | Added `x-session-password` edit auth support, guest-capable attachment routes, DOCX export endpoints, and `POST /api/sessions/:id/import/zip` replace-current-session import. |
+| `src/App.tsx` | Added edit-mode attachment loading/mutations, guest brief regeneration, ZIP upload/import handler, and session state refresh after import. |
+| `src/components/NewProject.tsx` | Added guest-visible upload management, upload rename UI, Upload Session ZIP input, real overview DOCX download, and fixed regenerate click handling. |
+| `src/components/RightPanel.tsx` | Rewired canvas overview Doc export to overview DOCX, removed visible PDF action, and replaced chevrons with plus/minus controls. |
+| `src/components/Canvas.tsx` | Replaced icon-only export buttons with labeled Save Doc and Save Canvas controls; Save Doc now downloads full-session DOCX and Save Canvas downloads ZIP. |
+| `src/services/ai.ts` | Removed the eight-upload synthesis cap and made the brief-generation prompt explicitly synthesize all usable uploaded documents. |
+| `package.json`, `package-lock.json` | Added direct dependencies on `docx` and `jszip`. |
+| `TODO.md`, `README.md`, `STAGING_HANDOFF_CHECKLIST.md` | Documented guest document workflows, DOCX export, ZIP restore, and remaining import limitations. |
+
+### Open follow-ups
+- Add create-new-session-from-ZIP and merge-into-current-session import modes.
+- Document and implement attachment binary restore behavior for local, ephemeral, and Firebase storage modes.
+- Add automated/import smoke tests for ZIP restore and DOCX export.
+
+---
+
+## 2026-05-19 — Shared Notepad and Exportable Notes
+
+### Summary
+Implemented the canvas **Notepad** as a shared session-level note block. It is available from the right panel for admins and guests, uses the same edit-permission rules as cards and brief edits, syncs through PartyKit, and exports with the session as **Notes**.
+
+### Decisions
+- **Notepad is separate from `project_notes`:** onboarding/brief notes remain part of the project overview flow, while canvas notepad content is stored as session notes.
+- **Store seam first:** notes now use a `NoteStore` interface, with local filesystem and Firestore implementations, so future storage providers can be added without touching UI logic.
+- **One UI block, array-backed data:** the shipped UI exposes one shared **Notes** block, but the data model supports multiple note records later.
+- **Exports treat notes as first-class content:** DOCX adds a top-level **Notes** section; ZIP includes `notes.json` and `Notes.md`; Markdown and JSON include notes as well.
+- **ZIP imports stay backward compatible:** archives without `notes.json` still import cleanly.
+
+### Files changed
+| File | What changed |
+|------|-------------|
+| `src/components/RightPanel.tsx` | Replaced the notepad placeholder with a debounced autosaving notes editor and read-only state. |
+| `src/App.tsx` | Loads notes with sessions, saves note edits through REST, and applies realtime note updates. |
+| `src/hooks/usePartyKit.ts`, `party/index.ts` | Added `note:update` realtime messages. |
+| `server.ts` | Added note API routes, ZIP import/export support, Markdown/JSON inclusion, and DOCX notes output. |
+| `src/server/notes.ts` | Added local `notes.json` read/write/upsert helpers. |
+| `src/server/backend/*` | Added the `NoteStore` seam and wired it into the current backend. |
+| `src/server/data/firestore/notes.ts` | Added Firestore note storage. |
+| `README.md`, `TODO.md`, `STAGING_HANDOFF_CHECKLIST.md` | Documented shared notes, exports, restore behavior, and testing follow-ups. |
+
+### Open follow-ups
+- Run manual admin/guest browser smoke testing for realtime note sync.
+- Decide whether existing card-specific local notes should become persisted/exported records or stay local-only.
+- Add automated coverage for notes in DOCX, ZIP restore, and concurrent editing once the collaboration test harness exists.
+
+---
+
 ## Session Summary (2025-04-25)
 
 This session delivered **Slice B** (Role-aware beta UX), **Slice E** (Canvas behavior refinement), and major connection system + inline edit polish. All changes were validated with `npm run lint` and `npm run build` before being considered complete.
