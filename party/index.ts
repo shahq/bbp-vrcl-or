@@ -1,5 +1,5 @@
 import type * as Party from "partykit/server";
-import type { CardData } from "../src/types";
+import type { CardData, ConnectionData } from "../src/types";
 
 type ConnectionRole = "admin" | "participant";
 
@@ -24,11 +24,12 @@ export interface LiveConnection {
 }
 
 export type Message =
+  | { type: "project:update"; updates: { project_client?: string; project_background?: string; project_notes?: string }; timestamp: number; userId: string }
   | { type: "card:create"; card: CardData; timestamp: number; userId: string }
   | { type: "card:update"; cardId: string; updates: Partial<CardData>; timestamp: number; userId: string }
   | { type: "card:delete"; cardId: string; timestamp: number; userId: string }
   | { type: "card:reorder"; section: string; cardIds: string[]; timestamp: number; userId: string }
-  | { type: "connection:create"; connection: { id: string; from: string; to: string }; timestamp: number; userId: string }
+  | { type: "connection:create"; connection: ConnectionData; timestamp: number; userId: string }
   | { type: "connection:delete"; connectionId: string; timestamp: number; userId: string }
   | { type: "presence:update"; user: UserPresence; timestamp: number }
   | { type: "cursor:move"; userId: string; x: number; y: number; timestamp: number }
@@ -284,6 +285,7 @@ export default class SessionServer implements Party.Server {
       this.state.lastActivity = Date.now();
 
       switch (data.type) {
+        case "project:update":
         case "card:create":
         case "card:update":
         case "card:delete":

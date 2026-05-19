@@ -16,7 +16,7 @@ import { UserProfilePrompt, UserProfile } from './components/UserProfilePrompt';
 import { ActiveUsers, ConnectionStatus } from './components/UserPresence';
 import { usePartyKit } from './hooks/usePartyKit';
 import type { LiveConnection } from '../party/index';
-import { CardData, ProjectAttachment } from './types';
+import { CardData, ConnectionData, ProjectAttachment } from './types';
 import { generateBriefFromUploads, generateCards, ModelType } from './services/ai';
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -409,7 +409,7 @@ function SessionView() {
 
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [cards, setCards] = useState<CardData[]>([]);
-  const [connections, setConnections] = useState<Array<{ id: string; from: string; to: string }>>([]);
+  const [connections, setConnections] = useState<ConnectionData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showPasswordWall, setShowPasswordWall] = useState(false);
@@ -522,6 +522,25 @@ function SessionView() {
     setTimeout(() => setToastMessage(null), 5000);
   }, []);
 
+  const getGuestEditPassword = useCallback(() => {
+    if (!sessionId || isAdminVerified) return undefined;
+    return sessionStorage.getItem(`session_${sessionId}_password`) || undefined;
+  }, [isAdminVerified, sessionId]);
+
+  const getEditRequestBody = useCallback(<T extends object>(body: T): T & { edit_password?: string } => {
+    const editPassword = getGuestEditPassword();
+    return editPassword ? { ...body, edit_password: editPassword } : body;
+  }, [getGuestEditPassword]);
+
+  const getEditRequestHeaders = useCallback((headers: Record<string, string> = {}) => {
+    const editPassword = getGuestEditPassword();
+    return {
+      ...headers,
+      ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {}),
+      ...(!isAdminVerified && editPassword ? { 'x-session-password': editPassword } : {}),
+    };
+  }, [adminSessionId, getGuestEditPassword, isAdminVerified]);
+
   useEffect(() => {
     if (!isAdminVerified || !adminSessionId || !sessionId) {
       setAdminPartyKitToken(null);
@@ -589,6 +608,7 @@ function SessionView() {
     sendCursorMove,
     sendPresenceUpdate,
     sendAdminKick,
+    sendProjectUpdate,
   } = usePartyKit({
     sessionId: canConnectPartyKit ? partySessionId : null,
     userId: partyUserId,
@@ -633,6 +653,19 @@ function SessionView() {
     },
     onConnectionDelete: (connectionId) => {
       setConnections((prev) => prev.filter((c) => c.id !== connectionId));
+    },
+    onProjectUpdate: (updates) => {
+      setCurrentSession((prev) => prev ? {
+        ...prev,
+        ...(updates.project_client !== undefined ? { project_client: updates.project_client } : {}),
+        ...(updates.project_background !== undefined ? { project_background: updates.project_background } : {}),
+        ...(updates.project_notes !== undefined ? { project_notes: updates.project_notes } : {}),
+      } : prev);
+      setProjectData((prev) => ({
+        client: updates.project_client ?? prev.client,
+        background: updates.project_background ?? prev.background,
+        notes: updates.project_notes ?? prev.notes,
+      }));
     },
     onKicked: (message) => {
       showToast(message);
@@ -680,21 +713,21 @@ function SessionView() {
     }
   }, [adminPartyKitToken, connectionRole, isAdminVerified, isConnected, isConnecting, liveConnections.length, partyKitError]);
 
-  const loadAttachments = async (targetSessionId: string) => {
-    if (!isAdminVerified || !adminSessionId) return;
-
+  const loadAttachments = useCallback(async (targetSessionId: string) => {
     try {
       const response = await fetch(apiUrl(`/api/sessions/${targetSessionId}/attachments`), {
-        headers: { 'x-admin-session': adminSessionId }
+        headers: getEditRequestHeaders()
       });
       if (response.ok) {
         const data = await response.json();
         setAttachments(data.attachments || []);
+      } else if (response.status === 403 || response.status === 401) {
+        setAttachments([]);
       }
     } catch (error) {
       console.error('Error loading attachments:', error);
     }
-  };
+  }, [getEditRequestHeaders]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -733,6 +766,7 @@ function SessionView() {
                     setIsEditMode(true);
                     setCards(data.cards || []);
                     setConnections(data.connections || []);
+                    await loadAttachments(sessionId);
                     setProjectData({
                       client: data.session.project_client || data.session.name || '',
                       background: data.session.project_background || '',
@@ -751,6 +785,7 @@ function SessionView() {
               setIsEditMode(true);
               setCards(data.cards || []);
               setConnections(data.connections || []);
+              await loadAttachments(sessionId);
               setProjectData({
                 client: data.session.project_client || data.session.name || '',
                 background: data.session.project_background || '',
@@ -770,7 +805,7 @@ function SessionView() {
     };
     
     loadSession();
-  }, [sessionId, isAdminVerified, adminSessionId]);
+  }, [sessionId, isAdminVerified, adminSessionId, loadAttachments]);
 
   useEffect(() => {
     if (!sessionId || isAdminVerified) return;
@@ -787,6 +822,7 @@ function SessionView() {
           if (data.session.onboarding_completed && !currentSession?.onboarding_completed) {
             setCards(data.cards || []);
             setConnections(data.connections || []);
+            await loadAttachments(sessionId);
             setProjectData({
               client: data.session.project_client || data.session.name || '',
               background: data.session.project_background || '',
@@ -801,7 +837,7 @@ function SessionView() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [sessionId, isAdminVerified, currentSession?.onboarding_completed, showPasswordWall]);
+  }, [sessionId, isAdminVerified, currentSession?.onboarding_completed, showPasswordWall, loadAttachments]);
 
   const verifyPassword = async (password: string): Promise<boolean> => {
     if (!sessionId) return false;
@@ -825,6 +861,7 @@ function SessionView() {
             const data = await sessionResponse.json();
             setCards(data.cards || []);
             setConnections(data.connections || []);
+            await loadAttachments(sessionId);
             setProjectData({
               client: data.session.project_client || data.session.name || '',
               background: data.session.project_background || '',
@@ -869,20 +906,20 @@ function SessionView() {
   };
 
   const saveProjectMetadata = async () => {
-    if (!sessionId || !isAdminVerified || !adminSessionId) return;
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
     const nextClient = projectData.client || currentSession?.name || '';
     const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-admin-session': adminSessionId,
+        ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {}),
       },
-      body: JSON.stringify({
+      body: JSON.stringify(getEditRequestBody({
         project_client: nextClient,
         project_background: projectData.background,
         project_notes: projectData.notes,
-      }),
+      })),
     });
 
     if (!response.ok) {
@@ -910,20 +947,67 @@ function SessionView() {
     }
   };
 
-  const handleRegenerateCards = async () => {
-    if (!sessionId || !isAdminVerified || !adminSessionId) return;
+  const handleUpdateProjectBackground = async (background: string) => {
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
+
+    const nextClient = projectData.client || currentSession?.name || '';
+    const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {}),
+      },
+      body: JSON.stringify(getEditRequestBody({
+        project_client: nextClient,
+        project_background: background,
+        project_notes: projectData.notes,
+      })),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to save project overview' }));
+      showToast(errorData.error || 'Failed to save project overview');
+      throw new Error(errorData.error || 'Failed to save project overview');
+    }
+
+    setProjectData((prev) => ({ ...prev, client: nextClient, background }));
+    setCurrentSession((prev) => prev ? {
+      ...prev,
+      project_client: nextClient,
+      project_background: background,
+      project_notes: projectData.notes,
+    } : prev);
+    sendProjectUpdate({
+      project_client: nextClient,
+      project_background: background,
+      project_notes: projectData.notes,
+    });
+    showToast('Project overview saved');
+  };
+
+  const handleRegenerateCards = async (backgroundOverride?: string) => {
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
     const confirmed = window.confirm('Doing this will delete your existing cards, are you sure?');
     if (!confirmed) return;
 
     setIsRegeneratingCards(true);
     try {
-      await saveProjectMetadata();
+      const nextBackground = backgroundOverride ?? projectData.background;
+      if (backgroundOverride !== undefined) {
+        await handleUpdateProjectBackground(nextBackground);
+      } else {
+        await saveProjectMetadata();
+      }
 
       for (const card of cards) {
         const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/${card.id}`), {
           method: 'DELETE',
-          headers: { 'x-admin-session': adminSessionId },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {}),
+          },
+          body: JSON.stringify(getEditRequestBody({})),
         });
 
         if (!response.ok) {
@@ -939,7 +1023,7 @@ function SessionView() {
 
       const generatedCards = await generateCards(
         projectData.client || currentSession?.name || '',
-        projectData.background,
+        nextBackground,
         projectData.notes,
         selectedModel
       );
@@ -985,7 +1069,7 @@ function SessionView() {
   };
 
   const handleUploadFiles = async (files: FileList | null) => {
-    if (!files || !sessionId || !isAdminVerified || !adminSessionId) return;
+    if (!files || !sessionId || (!isAdminVerified && !isEditMode)) return;
 
     setIsUploadingAttachments(true);
     try {
@@ -999,15 +1083,14 @@ function SessionView() {
 
         const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments`), {
           method: 'POST',
-          headers: {
+          headers: getEditRequestHeaders({
             'Content-Type': 'application/json',
-            'x-admin-session': adminSessionId,
-          },
-          body: JSON.stringify({
+          }),
+          body: JSON.stringify(getEditRequestBody({
             name: file.name,
             mimeType: file.type,
             dataUrl,
-          })
+          }))
         });
 
         if (!response.ok) {
@@ -1053,7 +1136,7 @@ function SessionView() {
   };
 
   const handleGenerateBriefFromUploads = async () => {
-    if (!sessionId || !isAdminVerified || !adminSessionId) return;
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
     const usableAttachments = attachments.filter((attachment) =>
       attachment.summary.trim() || attachment.extractedText.trim() || attachment.note?.trim()
@@ -1078,15 +1161,14 @@ function SessionView() {
 
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'PUT',
-        headers: {
+        headers: getEditRequestHeaders({
           'Content-Type': 'application/json',
-          'x-admin-session': adminSessionId,
-        },
-        body: JSON.stringify({
+        }),
+        body: JSON.stringify(getEditRequestBody({
           project_client: projectData.client || currentSession?.name || '',
           project_background: brief,
           project_notes: projectData.notes,
-        }),
+        })),
       });
 
       if (!response.ok) {
@@ -1109,16 +1191,15 @@ function SessionView() {
   };
 
   const handleUpdateAttachmentNote = async (attachmentId: string, note: string) => {
-    if (!sessionId || !isAdminVerified || !adminSessionId) return;
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/${attachmentId}`), {
         method: 'PATCH',
-        headers: {
+        headers: getEditRequestHeaders({
           'Content-Type': 'application/json',
-          'x-admin-session': adminSessionId,
-        },
-        body: JSON.stringify({ note }),
+        }),
+        body: JSON.stringify(getEditRequestBody({ note })),
       });
 
       if (!response.ok) {
@@ -1137,13 +1218,45 @@ function SessionView() {
     }
   };
 
+  const handleRenameAttachment = async (attachmentId: string, name: string) => {
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
+
+    try {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/${attachmentId}`), {
+        method: 'PATCH',
+        headers: getEditRequestHeaders({
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify(getEditRequestBody({ name })),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to rename upload' }));
+        throw new Error(errorData.error || 'Failed to rename upload');
+      }
+
+      const data = await response.json();
+      setAttachments((prev) => prev.map((attachment) =>
+        attachment.id === attachmentId ? data.attachment : attachment
+      ));
+      showToast('Upload renamed');
+    } catch (error: any) {
+      console.error('Error renaming attachment:', error);
+      showToast(error.message || 'Failed to rename upload');
+      throw error;
+    }
+  };
+
   const handleDeleteAttachment = async (attachmentId: string) => {
-    if (!sessionId || !isAdminVerified || !adminSessionId) return;
+    if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/${attachmentId}`), {
         method: 'DELETE',
-        headers: { 'x-admin-session': adminSessionId }
+        headers: getEditRequestHeaders({
+          'Content-Type': 'application/json',
+        }),
+        body: JSON.stringify(getEditRequestBody({}))
       });
 
       if (!response.ok) {
@@ -1157,6 +1270,20 @@ function SessionView() {
       console.error('Error deleting attachment:', error);
       showToast(error.message || 'Failed to delete upload');
     }
+  };
+
+  const handleApplyProjectBackground = (text: string, mode: ProjectBackgroundApplyMode) => {
+    const cleanText = text.trim();
+    if (!cleanText) return;
+
+    setProjectData((prev) => ({
+      ...prev,
+      background: mode === 'append' && prev.background.trim()
+        ? `${prev.background.trim()}\n\n${cleanText}`
+        : cleanText,
+    }));
+
+    showToast('Project overview draft applied');
   };
 
   const handleRenameProject = async (name: string) => {
@@ -1199,7 +1326,7 @@ function SessionView() {
           'Content-Type': 'application/json',
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
         },
-        body: JSON.stringify(updates)
+        body: JSON.stringify(getEditRequestBody(updates))
       });
 
       if (!response.ok) {
@@ -1223,7 +1350,7 @@ function SessionView() {
           'Content-Type': 'application/json',
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
         },
-        body: JSON.stringify(cardData)
+        body: JSON.stringify(getEditRequestBody(cardData))
       });
 
       if (!response.ok) {
@@ -1258,13 +1385,13 @@ function SessionView() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-session': adminSessionId || ''
+          ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {}),
         },
-        body: JSON.stringify({
+        body: JSON.stringify(getEditRequestBody({
           section: card.section,
           content: card.content,
           starred: card.starred
-        })
+        }))
       });
     }
 
@@ -1283,8 +1410,10 @@ function SessionView() {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/${cardId}`), {
         method: 'DELETE',
         headers: {
+          'Content-Type': 'application/json',
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
-        }
+        },
+        body: JSON.stringify(getEditRequestBody({}))
       });
 
       if (!response.ok) {
@@ -1308,7 +1437,7 @@ function SessionView() {
           'Content-Type': 'application/json',
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
         },
-        body: JSON.stringify({ section, card_ids: cardIds })
+        body: JSON.stringify(getEditRequestBody({ section, card_ids: cardIds }))
       });
       if (response.ok) {
         sendCardReorder(section, cardIds);
@@ -1318,7 +1447,7 @@ function SessionView() {
     }
   };
 
-  const handleConnectionCreate = async (from: string, to: string) => {
+  const handleConnectionCreate = async (from: string, to: string, threadId?: string, color?: string, ownerUserId?: string) => {
     if (!sessionId) return;
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/connections`), {
@@ -1327,11 +1456,19 @@ function SessionView() {
           'Content-Type': 'application/json',
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
         },
-        body: JSON.stringify({ from, to })
+        body: JSON.stringify(getEditRequestBody({
+          from,
+          to,
+          threadId,
+          color: color || userProfile?.color || partyUserColor,
+          ownerUserId: ownerUserId || userProfile?.id || partyUserId,
+        }))
       });
       if (response.ok) {
         const data = await response.json();
-        setConnections(prev => [...prev, data.connection]);
+        setConnections(prev => prev.some((connection) => connection.id === data.connection.id)
+          ? prev.map((connection) => connection.id === data.connection.id ? data.connection : connection)
+          : [...prev, data.connection]);
         sendConnectionCreate(data.connection);
       }
     } catch (error) {
@@ -1341,19 +1478,34 @@ function SessionView() {
 
   const handleConnectionDelete = async (connectionId: string) => {
     if (!sessionId) return;
+    let removedConnection: ConnectionData | undefined;
+    setConnections(prev => {
+      removedConnection = prev.find(c => c.id === connectionId);
+      return prev.filter(c => c.id !== connectionId);
+    });
+
     try {
-      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/connections/${connectionId}`), {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/connections/${encodeURIComponent(connectionId)}`), {
         method: 'DELETE',
         headers: {
+          'Content-Type': 'application/json',
           ...(isAdminVerified && adminSessionId ? { 'x-admin-session': adminSessionId } : {})
-        }
+        },
+        body: JSON.stringify(getEditRequestBody({}))
       });
-      if (response.ok) {
-        setConnections(prev => prev.filter(c => c.id !== connectionId));
-        sendConnectionDelete(connectionId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to delete connection' }));
+        throw new Error(errorData.error || 'Failed to delete connection');
       }
+
+      sendConnectionDelete(connectionId);
     } catch (error) {
+      if (removedConnection) {
+        setConnections(prev => prev.some(c => c.id === removedConnection?.id) ? prev : [...prev, removedConnection!]);
+      }
       console.error('Error deleting connection', error);
+      throw error;
     }
   };
 
@@ -1392,7 +1544,7 @@ function SessionView() {
     );
   }
 
-  const showBriefWorkspace = !currentSession.onboarding_completed || (isAdminVerified && workspaceView === 'brief');
+  const showBriefWorkspace = !currentSession.onboarding_completed || workspaceView === 'brief';
   const showCanvasWorkspace = currentSession.onboarding_completed && !showBriefWorkspace;
 
   return (
@@ -1430,33 +1582,33 @@ function SessionView() {
         <TopBar 
           projectName={currentSession.name}
           onTutorialSelect={setActiveTutorial}
-          rightContent={
-            isAdminVerified && (
-              <div className="flex items-center gap-2">
-                {showCanvasWorkspace && (
-                  <button
-                    onClick={() => setWorkspaceView('brief')}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors shadow-sm whitespace-nowrap"
-                  >
-                    Return to brief
-                  </button>
-                )}
-                {showBriefWorkspace && currentSession.onboarding_completed && (
-                  <button
-                    onClick={() => setWorkspaceView('canvas')}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors shadow-sm whitespace-nowrap"
-                  >
-                    Return to canvas
-                  </button>
-                )}
+        rightContent={
+            <div className="flex items-center gap-2">
+              {showCanvasWorkspace && (
+                <button
+                  onClick={() => setWorkspaceView('brief')}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors shadow-sm whitespace-nowrap"
+                >
+                  Return to brief
+                </button>
+              )}
+              {showBriefWorkspace && currentSession.onboarding_completed && (
+                <button
+                  onClick={() => setWorkspaceView('canvas')}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors shadow-sm whitespace-nowrap"
+                >
+                  Return to canvas
+                </button>
+              )}
+              {isAdminVerified && (
                 <button
                   onClick={() => window.location.href = '/'}
                   className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors shadow-sm whitespace-nowrap"
                 >
                   Exit Session
                 </button>
-              </div>
-            )
+              )}
+            </div>
           }
         >
           <div className="flex items-center gap-3">
@@ -1488,6 +1640,7 @@ function SessionView() {
                 onCursorMove={sendCursorMove}
                 activeUsers={activeUsers}
                 currentUserId={userProfile?.id || ''}
+                currentUserColor={userProfile?.color || partyUserColor}
                 activeTutorial={activeTutorial}
                 onCloseTutorial={() => setActiveTutorial(null)}
               />
@@ -1499,13 +1652,14 @@ function SessionView() {
                 selectedModel={selectedModel}
                 currentSession={currentSession}
                 isEditMode={isEditMode}
-                onCardAdd={handleCardAdd}
                 attachments={attachments}
+                onUpdateProjectBackground={handleUpdateProjectBackground}
+                onSaveAndRegenerateProjectBackground={isEditMode ? handleRegenerateCards : undefined}
               />
             </>
           ) : (
             <>
-              {isAdminVerified ? (
+              {isAdminVerified || currentSession.onboarding_completed ? (
                 <NewProject 
                   projectName={currentSession.name}
                   onRenameProject={handleRenameProject}
@@ -1518,15 +1672,18 @@ function SessionView() {
                   isSavingProjectChanges={isSavingProjectChanges}
                   isRegeneratingCards={isRegeneratingCards}
                   showGenerateCanvasButton={!currentSession.onboarding_completed}
-                  showRegenerateCardsButton={currentSession.onboarding_completed}
+                  showRegenerateCardsButton={isEditMode && currentSession.onboarding_completed}
                   attachments={attachments}
                   isUploadingAttachments={isUploadingAttachments}
                   isGeneratingBriefFromUploads={isGeneratingBriefFromUploads}
                   onUploadFiles={handleUploadFiles}
                   onGenerateBriefFromUploads={handleGenerateBriefFromUploads}
                   onUseAttachmentText={handleUseAttachmentText}
+                  onRenameAttachment={handleRenameAttachment}
                   onUpdateAttachmentNote={handleUpdateAttachmentNote}
                   onDeleteAttachment={handleDeleteAttachment}
+                  canManageProjectName={isAdminVerified}
+                  canManageAttachments={isAdminVerified || isEditMode}
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center">
@@ -1550,6 +1707,7 @@ function SessionView() {
                 currentSession={currentSession}
                 isEditMode={isEditMode}
                 attachments={attachments}
+                onApplyProjectBackground={handleApplyProjectBackground}
               />
             </>
           )}

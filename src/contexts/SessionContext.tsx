@@ -5,7 +5,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { apiUrl } from '../config/api';
-import { CardData } from '../types';
+import { CardData, ConnectionData } from '../types';
 
 interface Session {
   id: string;
@@ -21,7 +21,7 @@ interface SessionContextType {
   // Current session state
   currentSession: Session | null;
   cards: CardData[];
-  connections: Array<{ id: string; from: string; to: string }>;
+  connections: ConnectionData[];
   isLoading: boolean;
   isEditMode: boolean;
   
@@ -46,7 +46,7 @@ interface SessionContextType {
   // Connection operations
   addConnection: (from: string, to: string) => Promise<void>;
   deleteConnection: (connectionId: string) => Promise<void>;
-  saveConnections: (connections: Array<{ id: string; from: string; to: string }>) => Promise<void>;
+  saveConnections: (connections: ConnectionData[]) => Promise<void>;
   
   // Export
   exportSession: (format: 'zip' | 'markdown' | 'json') => void;
@@ -57,7 +57,7 @@ const SessionContext = createContext<SessionContextType | undefined>(undefined);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [cards, setCards] = useState<CardData[]>([]);
-  const [connections, setConnections] = useState<Array<{ id: string; from: string; to: string }>>([]);
+  const [connections, setConnections] = useState<ConnectionData[]>([]);
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -342,7 +342,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [currentSession, isEditMode]);
 
   // Save all connections (bulk update)
-  const saveConnections = useCallback(async (newConnections: Array<{ id: string; from: string; to: string }>) => {
+  const saveConnections = useCallback(async (newConnections: ConnectionData[]) => {
     if (!currentSession || !isEditMode) return;
     
     try {

@@ -1,0 +1,15 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Alpha default:
+    // - the current app uses the server via the Firebase Admin SDK
+    // - browser clients do not read or write Firestore directly yet
+    // Keep client access closed until the frontend intentionally adopts
+    // Firebase Auth + Firestore client reads/writes.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

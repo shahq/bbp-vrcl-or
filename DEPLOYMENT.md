@@ -27,9 +27,12 @@
 - Automatic scaling
 
 **Express Backend:**
-- Can deploy to: Railway, Render, Fly.io, DigitalOcean, AWS, etc.
-- Requires: Node.js 18+, SQLite write access, persistent storage for file system
-- Recommend: Docker container with volume mount for `/data` directory
+- Preferred Firebase-aligned runtime: **Cloud Run**
+- Repo now includes a production [Dockerfile](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/Dockerfile)
+- Current alpha backend shape no longer requires SQLite or persistent attachment storage if using:
+  - `DATA_STORE_PROVIDER=firestore`
+  - `ATTACHMENT_STORE_PROVIDER=ephemeral`
+- PartyKit still remains separate
 
 **Frontend (React + Vite):**
 - Static files after `npm run build`
@@ -58,18 +61,18 @@ PartyKit server must accept connections from your domain:
 
 ### 3. Database Persistence
 
-**SQLite Considerations:**
-- SQLite file must persist between deployments
-- Use volume mounts in Docker/containerized environments
-- For high availability: Consider migrating to PostgreSQL later
-- Backup strategy: Regular backups of `/data/sessions.db`
+**Current alpha backend target:**
+- Firestore persists sessions, cards, connections, attachment metadata, extracted text, summaries, and source notes
+- SQLite is no longer required in the deployment path when `DATA_STORE_PROVIDER=firestore`
+- If you intentionally fall back to `DATA_STORE_PROVIDER=sqlite`, you would again need persistent disk
 
 ### 4. File Storage
 
-**Session Files:**
-- Cards stored in `/data/sessions/{sessionId}/`
-- Must persist between deployments
-- Backup strategy: Regular backups of `/data/sessions/` directory
+**Current alpha backend target:**
+- Card/session runtime persistence no longer depends on local files when using Firestore
+- Uploaded source document binaries can run in `ATTACHMENT_STORE_PROVIDER=ephemeral` mode
+- In ephemeral mode, original uploaded files are temporary processing artifacts
+- Durable uploaded file storage is deferred until Cloud Storage / Blaze is enabled
 
 ### 5. Recommended Alpha Path
 
@@ -77,12 +80,12 @@ The cleanest alpha path for this repo is a hybrid deployment that keeps the curr
 
 Recommended hybrid alpha path:
 
-1. Host the frontend on Firebase Hosting or Netlify.
-2. Keep the Express backend on a Node host with persistent storage.
-3. Keep PartyKit deployed separately.
-4. Keep all frontend-to-backend and frontend-to-PartyKit URLs env-driven.
-5. Introduce Firebase project ownership, config, and seams immediately.
-6. Migrate auth, session data, and attachments to Firebase in staged steps rather than as a pre-alpha rewrite.
+1. Deploy PartyKit separately.
+2. Deploy the Express backend to Cloud Run.
+3. Use Firestore for sessions/cards/connections.
+4. Use temporary upload processing with `ATTACHMENT_STORE_PROVIDER=ephemeral`.
+5. Host the frontend on Firebase Hosting.
+6. Introduce Cloud Storage and Firebase Auth later as explicit follow-up phases.
 
 Why this is the recommended alpha path:
 
@@ -602,117 +605,120 @@ curl https://beyond-bullet-points.{username}.partykit.dev/health
 
 ## Express Backend Deployment
 
-### Option A: Railway
+### Recommended Path: Cloud Run
 
-**1. Install Railway CLI:**
+Use Cloud Run for the backend runtime. It keeps the app in the client’s Google/Firebase environment without forcing a full Functions rewrite.
+
+The repo now includes:
+
+- [Dockerfile](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/Dockerfile)
+- [.dockerignore](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/.dockerignore)
+- [requirements.txt](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/requirements.txt) for document extraction dependencies
+
+### Alpha backend assumptions
+
+For the current alpha deployment:
+
+- `DATA_STORE_PROVIDER=firestore`
+- `ATTACHMENT_STORE_PROVIDER=ephemeral`
+- `ADMIN_AUTH_PROVIDER=password`
+- PartyKit stays separate
+- uploaded document binaries are temporary processing artifacts
+- extracted text, summaries, source notes, sessions, cards, and connections persist
+
+### 1. Enable required Google services
+
+In project `sqd-bbp`, make sure these are enabled:
+
+- Cloud Run
+- Artifact Registry
+- Firestore
+
+Cloud Storage is **not** required yet if you stay on `ATTACHMENT_STORE_PROVIDER=ephemeral`.
+
+### 2. Authenticate gcloud
+
 ```bash
-npm i -g @railway/cli
+gcloud auth login
+gcloud config set project sqd-bbp
 ```
 
-**2. Login:**
+### 3. Build and deploy the backend
+
+From the repo root:
+
 ```bash
-railway login
+gcloud run deploy bbp-backend-staging \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated
 ```
 
-**3. Initialize Project:**
+If you prefer Docker explicitly instead of `--source`, you can also build from the checked-in Dockerfile:
+
 ```bash
-railway init
+gcloud builds submit --tag us-central1-docker.pkg.dev/sqd-bbp/bbp/bbp-backend-staging
+
+gcloud run deploy bbp-backend-staging \
+  --image us-central1-docker.pkg.dev/sqd-bbp/bbp/bbp-backend-staging \
+  --region us-central1 \
+  --allow-unauthenticated
 ```
 
-**4. Add Environment Variables:**
+### 4. Set backend environment variables
+
+Set these on the Cloud Run service:
+
 ```bash
-railway variables set ADMIN_PASSWORD=shazam!
-railway variables set AI_PROVIDER=opencode
-railway variables set AI_DEFAULT_MODEL=minimax-m2.5
-railway variables set GOOGLE_API_KEY=your_key
-railway variables set OPENCODE_API_KEY=your_key
-railway variables set OPENROUTER_API_KEY=your_key
-railway variables set PARTYKIT_HOST=beyond-bullet-points.{username}.partykit.dev
-railway variables set PARTYKIT_ADMIN_SECRET=your_secret
+NODE_ENV=production
+DATA_STORE_PROVIDER=firestore
+ATTACHMENT_STORE_PROVIDER=ephemeral
+ADMIN_AUTH_PROVIDER=password
+
+FIREBASE_PROJECT_ID=sqd-bbp
+FIREBASE_CLIENT_EMAIL=your_service_account_client_email
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+ADMIN_PASSWORD=your_admin_password
+PARTYKIT_HOST=beyond-bullet-points.the-shaper.partykit.dev
+PARTYKIT_ADMIN_SECRET=your_partykit_secret
+
+AI_PROVIDER=google
+AI_DEFAULT_MODEL=gemini-3.1-pro-preview
+GOOGLE_API_KEY=your_google_api_key
+OPENCODE_API_KEY=your_opencode_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
 ```
 
-**5. Deploy:**
+Notes:
+
+- `PORT` is provided by Cloud Run automatically
+- `FIREBASE_STORAGE_BUCKET` is **not needed** in `ephemeral` attachment mode
+- if you later enable Cloud Storage, switch:
+  - `ATTACHMENT_STORE_PROVIDER=firebase`
+  - `FIREBASE_STORAGE_BUCKET=...`
+
+### 5. Verify backend staging
+
+After deploy, test:
+
 ```bash
-railway up
+curl https://YOUR_CLOUD_RUN_URL/api/health
 ```
 
-**6. Add Volume for Data Persistence:**
-- Go to Railway dashboard
-- Add a volume to your service
-- Mount at `/app/data`
+Then verify in the UI:
 
-### Option B: Render
+1. admin login
+2. create session
+3. generate cards
+4. edit cards
+5. upload document
+6. generate brief from uploads
+7. export zip / markdown / json
 
-**1. Create `render.yaml`:**
-```yaml
-services:
-  - type: web
-    name: beyond-bullet-points
-    runtime: node
-    plan: starter
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: ADMIN_PASSWORD
-        sync: false
-      - key: AI_PROVIDER
-        value: opencode
-      - key: AI_DEFAULT_MODEL
-        value: minimax-m2.5
-      - key: GOOGLE_API_KEY
-        sync: false
-      - key: OPENCODE_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-      - key: PARTYKIT_HOST
-        value: beyond-bullet-points.{username}.partykit.dev
-      - key: PARTYKIT_ADMIN_SECRET
-        sync: false
-    disk:
-      name: data
-      mountPath: /app/data
-      sizeGB: 1
-```
+### Historical alternatives
 
-**2. Deploy via Dashboard:**
-- Connect GitHub repository
-- Render will auto-deploy on push
-
-### Option C: Fly.io
-
-**1. Install Fly CLI:**
-```bash
-curl -L https://fly.io/install.sh | sh
-```
-
-**2. Launch App:**
-```bash
-fly launch
-```
-
-**3. Create Volume:**
-```bash
-fly volumes create data --size 1
-```
-
-**4. Update `fly.toml`:**
-```toml
-[mounts]
-  source = "data"
-  destination = "/app/data"
-
-[env]
-  ADMIN_PASSWORD = "shazam!"
-  PARTYKIT_HOST = "beyond-bullet-points.{username}.partykit.dev"
-```
-
-**5. Deploy:**
-```bash
-fly deploy
-```
+Railway, Render, and Fly.io can still host the current Express app, but they are no longer the recommended path for this repo’s Firebase handoff goal.
 
 ---
 

@@ -162,6 +162,27 @@ Result: textarea now grows and shrinks to match its content, behaving like the r
 - Note synthesis into a new card (RightPanel track)
 - Chat apply confirmation / strict edit actions (Slice C)
 
+## 2026-05-18 — Per-user color-coded story threads
+
+### Summary
+Refined threaded connections from global thread assembly into user-owned, color-coded story paths. The canvas now supports multiple participants using the same cards at the same time while keeping each person's story assembly private to their own thread.
+
+### Decisions
+- **One active thread per user:** A user's current thread is identified by `ownerUserId` when available, with color/thread metadata as fallback for older connection records.
+- **Owner-aware connection identity:** Connection IDs now include an owner/thread key before `from` and `to`, so two users can create the same visible edge without overwriting each other in SQLite or Firestore.
+- **Column order is the source of narrative order:** Story assembly uses the canonical order `place -> role -> challenge -> point_a -> point_b -> change -> story`, not the chronological order in which edges were created.
+- **Current-user assembly only:** The button was renamed to **Assemble My Story** and now assembles only `getCurrentUserConnections()`.
+- **Story column is an output:** Story cards are generated results, not selectable hero cards, so unconnected story cards are never dimmed.
+- **Other users are visual context:** The **Show/Hide Others' Threads** switch controls visibility only. Other users' connection lines are non-interactive and do not block card or node hit targets.
+- **Downstream cleanup on reconfiguration:** Deleting, replacing, or breaking a connection removes invalid downstream links for that user's thread so forward columns become selectable again. Card deletion removes all direct connections touching the deleted card and also triggers downstream cleanup from that card.
+
+### Files changed
+| File | What changed |
+|------|-------------|
+| `src/components/Canvas.tsx` | Added owner-aware thread filtering, per-user assembly, downstream cleanup, story-column dimming exception, current-user-only connection selection/delete, and the Show/Hide Others' Threads control. |
+| `src/server/connections.ts` | Updated SQLite connection IDs to include owner/thread identity and preserved `threadId`, `color`, and `ownerUserId` in connection mirrors and bulk saves. |
+| `src/server/data/firestore/connections.ts` | Updated Firestore connection IDs to include owner/thread identity so parallel users can share the same card pair. |
+
 ---
 
 ## Session Summary (2025-04-25)

@@ -3,6 +3,7 @@ import type { ModelType } from "../../services/ai";
 import ChatActionConfirmation from "./ChatActionConfirmation";
 import ChatComposer from "./ChatComposer";
 import ChatThread from "./ChatThread";
+import ProjectBriefQuestionnaire from "./ProjectBriefQuestionnaire";
 import { useChatPanel } from "./useChatPanel";
 import type { ChatActionRequest, ChatPanelContext, ProjectBackgroundApplyMode } from "./types";
 
@@ -15,14 +16,25 @@ interface ChatPanelProps {
 }
 
 export default function ChatPanel({ context, selectedModel, pendingAction, onApplyProjectBackgroundDraft, selectedContextLabel }: ChatPanelProps) {
+  if (context.currentView === "new") {
+    return (
+      <div className="h-full">
+        <ChatActionConfirmation action={pendingAction} />
+        <ProjectBriefQuestionnaire
+          context={context}
+          selectedModel={selectedModel}
+          onApplyProjectBackgroundDraft={onApplyProjectBackgroundDraft}
+        />
+      </div>
+    );
+  }
+
   const {
     messages,
     input,
     setInput,
     isTyping,
     handleSendMessage,
-    starterLabel,
-    starterPrompt,
     emptyState,
   } = useChatPanel({ context, selectedModel, onApplyProjectBackgroundDraft });
 
@@ -70,9 +82,9 @@ export default function ChatPanel({ context, selectedModel, pendingAction, onApp
         setInput={setInput}
         onSend={handleSendMessage}
         isTyping={isTyping}
-        showStarter={messages.length === 0}
-        starterLabel={starterLabel}
-        onStarter={() => setInput(starterPrompt)}
+        showStarter={false}
+        starterLabel=""
+        onStarter={() => {}}
         selectedContextLabel={selectedContextLabel}
       />
     </div>

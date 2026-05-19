@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { Lock, Unlock, Loader2, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { apiUrl } from '../config/api';
+import { loginWithAdminPassword } from '../services/adminAuth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -36,23 +36,11 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch(apiUrl('/api/admin/login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Store admin session
-        localStorage.setItem('adminSessionId', data.sessionId);
-        login(data.sessionId);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'Invalid password');
-      }
+      const data = await loginWithAdminPassword(password);
+      localStorage.setItem('adminSessionId', data.sessionId);
+      login(data.sessionId);
     } catch (err) {
-      setError('Failed to connect to server');
+      setError(err instanceof Error ? err.message : 'Failed to connect to server');
     } finally {
       setIsLoading(false);
     }

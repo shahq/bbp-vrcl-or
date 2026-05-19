@@ -11,22 +11,33 @@ export interface Connection {
   session_id: string;
   from_card_id: string;
   to_card_id: string;
+  thread_id?: string | null;
+  color?: string | null;
+  owner_user_id?: string | null;
   created_at: string;
+}
+
+function getConnectionId(fromCardId: string, toCardId: string, threadId?: string, color?: string, ownerUserId?: string) {
+  const ownerKey = ownerUserId || threadId || color || 'shared';
+  return `${encodeURIComponent(ownerKey)}-${fromCardId}-${toCardId}`;
 }
 
 export function createConnection(
   sessionId: string,
   fromCardId: string,
-  toCardId: string
+  toCardId: string,
+  threadId?: string,
+  color?: string,
+  ownerUserId?: string
 ): Connection {
-  const id = `${fromCardId}-${toCardId}`;
+  const id = getConnectionId(fromCardId, toCardId, threadId, color, ownerUserId);
   
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO connections (id, session_id, from_card_id, to_card_id)
-    VALUES (?, ?, ?, ?)
+    INSERT OR REPLACE INTO connections (id, session_id, from_card_id, to_card_id, thread_id, color, owner_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   
-  stmt.run(id, sessionId, fromCardId, toCardId);
+  stmt.run(id, sessionId, fromCardId, toCardId, threadId || null, color || null, ownerUserId || null);
   
   // Update connections.json file
   updateConnectionsFile(sessionId);
@@ -36,6 +47,9 @@ export function createConnection(
     session_id: sessionId,
     from_card_id: fromCardId,
     to_card_id: toCardId,
+    thread_id: threadId || null,
+    color: color || null,
+    owner_user_id: ownerUserId || null,
     created_at: new Date().toISOString()
   };
 }
@@ -77,12 +91,26 @@ export function getConnection(id: string): Connection | null {
 }
 
 export function deleteConnectionsForCard(cardId: string): boolean {
+  const affectedSessions = new Set(
+    db.prepare(`
+      SELECT DISTINCT session_id FROM connections 
+      WHERE from_card_id = ? OR to_card_id = ?
+    `).all(cardId, cardId).map((row: any) => row.session_id)
+  );
+
   const stmt = db.prepare(`
     DELETE FROM connections 
     WHERE from_card_id = ? OR to_card_id = ?
   `);
   
   const result = stmt.run(cardId, cardId);
+
+  affectedSessions.forEach((sessionId) => {
+    if (typeof sessionId === 'string') {
+      updateConnectionsFile(sessionId);
+    }
+  });
+
   return result.changes > 0;
 }
 
@@ -91,7 +119,10 @@ function updateConnectionsFile(sessionId: string): void {
   const simplifiedConnections = connections.map(c => ({
     id: c.id,
     from: c.from_card_id,
-    to: c.to_card_id
+    to: c.to_card_id,
+    threadId: c.thread_id || undefined,
+    color: c.color || undefined,
+    ownerUserId: c.owner_user_id || undefined
   }));
   
   fileUtils.writeConnections(sessionId, simplifiedConnections);
@@ -99,7 +130,7 @@ function updateConnectionsFile(sessionId: string): void {
 
 export function saveAllConnections(
   sessionId: string,
-  connections: Array<{ id: string; from: string; to: string }>
+  connections: Array<{ id: string; from: string; to: string; threadId?: string; color?: string; ownerUserId?: string }>
 ): void {
   // Clear existing connections
   const clearStmt = db.prepare('DELETE FROM connections WHERE session_id = ?');
@@ -107,13 +138,13 @@ export function saveAllConnections(
   
   // Insert new connections
   const insertStmt = db.prepare(`
-    INSERT INTO connections (id, session_id, from_card_id, to_card_id)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO connections (id, session_id, from_card_id, to_card_id, thread_id, color, owner_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   
-  const insertAll = db.transaction((items: Array<{ id: string; from: string; to: string }>) => {
+  const insertAll = db.transaction((items: Array<{ id: string; from: string; to: string; threadId?: string; color?: string; ownerUserId?: string }>) => {
     for (const item of items) {
-      insertStmt.run(item.id, sessionId, item.from, item.to);
+      insertStmt.run(item.id, sessionId, item.from, item.to, item.threadId || null, item.color || null, item.ownerUserId || null);
     }
   });
   

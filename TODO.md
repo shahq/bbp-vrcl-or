@@ -1,8 +1,8 @@
 # Beyond Bullet Points - MVP Implementation Plan
 
-**Status:** Phase 4 COMPLETE ✅ | Real-time Multiplayer Active
+**Status:** Phase 4 COMPLETE ✅ | Guest Brief + Threaded Story Polish Active
 
-**Last Updated:** 2026-03-16
+**Last Updated:** 2026-05-16
 
 ## Goal
 Create a working prototype (MVP) for the Beyond Bullet Points Exercise that Shahid can share and test among peers and BDO executives. The tool helps structure presentations using the "Beyond Bulletpoints" methodology through an AI-assisted canvas interface.
@@ -14,8 +14,8 @@ Create a working prototype (MVP) for the Beyond Bullet Points Exercise that Shah
 ### What is "Beyond Bullet Points"?
 **Beyond Bullet Points** is a storytelling methodology for creating compelling presentations that move beyond dry, bullet-pointed slides. Instead of listing facts, it structures presentations as a narrative journey that engages the audience emotionally and intellectually.
 
-### The 6-Column Story Framework
-The tool uses a 6-column canvas to structure presentations:
+### The 6-Column Story Framework + Story Output
+The tool uses a 6-column canvas to structure presentations, plus a Story output column:
 
 1. **Place** - The setting/situation where the story begins
 2. **Role** - The audience's role/part in the narrative
@@ -33,27 +33,28 @@ When connected in sequence, these elements form a complete transformation story.
 
 ### How It Works
 1. **Admin** logs in and creates a session (with optional password protection)
-2. **Admin** completes the "New Project" onboarding (client info, background, AI-assisted idea generation)
+2. **Admin** completes the "New Project" onboarding (client info, deterministic questionnaire, AI-assisted project overview, and card generation)
 3. **Admin** shares the session URL with team members: `website.com/bdo-xxxx`
 4. **Players** access the session and collaborate on the canvas
 5. **Cards** are organized across the 6 columns to build the narrative
-6. **Connections** between cards create story flows
+6. **Connections** between cards create color-coded story flows, with separate threads for parallel paths
 7. **Export** the final story as ZIP, Markdown, or JSON
 
 ### Key Features
 - 🔐 **Password Protection:** Optional session-level passwords for sensitive projects
-- 🤖 **AI Integration:** Generate ideas using Gemini or Opencode models
+- 🤖 **AI Integration:** Generate ideas through the server AI provider seam
 - 🎨 **Visual Canvas:** Drag-and-drop interface with 6 columns
-- 🔗 **Story Flows:** Connect cards to create narrative sequences
+- 🔗 **Story Flows:** Connect cards to create narrative sequences, including parallel color-coded threads
 - 📤 **Export:** Download sessions as AI-readable Markdown files
-- 👥 **Collaboration:** Real-time multiplayer (Phase 4)
+- 👥 **Collaboration:** Real-time multiplayer through PartyKit
+- 🧭 **Deterministic Briefing:** Configurable questionnaire turns owner-defined answers into a project overview
 
 ### Tech Stack
 - **Frontend:** React 19 + TypeScript + Tailwind CSS
 - **Backend:** Express + SQLite + better-sqlite3
 - **Storage:** Hybrid (SQLite index + Markdown files)
-- **AI:** Google Gemini API + Opencode API
-- **Real-time:** PartyKit (coming in Phase 4)
+- **AI:** Server-owned provider layer for Gemini, Opencode proxy, and OpenRouter-compatible models
+- **Real-time:** PartyKit
 
 ---
 
@@ -75,7 +76,8 @@ When connected in sequence, these elements form a complete transformation story.
 - Can edit only if:
   - Session has no password (open), OR
   - Session has password and they enter it correctly
-- Never see onboarding - only the completed canvas
+- Never see the initial setup-only onboarding while a session is incomplete
+- Can return from a completed canvas to the Create Project Brief page and edit Project Overview or notes when they have edit access
 
 **Future Roles (Post-MVP)**
 - Lead Guest: Could do onboarding if delegated by admin
@@ -200,6 +202,8 @@ CREATE TABLE connections (
   session_id TEXT NOT NULL,
   from_card_id TEXT NOT NULL,
   to_card_id TEXT NOT NULL,
+  thread_id TEXT,
+  color TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
   FOREIGN KEY (from_card_id) REFERENCES cards(id) ON DELETE CASCADE,
@@ -241,6 +245,7 @@ POST   /api/sessions/:id/cards/reorder # Reorder cards (requires admin auth or s
 ```
 GET  /api/sessions/:id/connections     # Get all connections (public)
 POST /api/sessions/:id/connections     # Create connection (requires auth or password)
+  Body: { from, to, threadId?, color? }
 DELETE /api/sessions/:id/connections/:id # Delete connection (requires auth or password)
 POST /api/sessions/:id/connections/bulk  # Bulk update (requires auth or password)
 ```
@@ -393,6 +398,54 @@ GET /api/sessions/:id/export/json      # Download JSON (public)
    - [x] Visual feedback for connection state
    - [x] Graceful handling of disconnections
 
+### Phase 4.5: Guest Brief + Threaded Story Polish
+**Priority: HIGH** - IN PROGRESS
+
+1. **Guest Brief Access** ✅
+   - [x] Guests with edit access can use Return to brief from a completed canvas
+   - [x] Guests can save Project Overview and notes edits
+   - [x] Admin-only project naming, attachment management, and card regeneration controls stay admin-only
+
+2. **Deterministic Create Project Brief Questionnaire** ✅
+   - [x] Replace the old guided Q&A prompt flow with a configured multi-step questionnaire
+   - [x] Store questionnaire copy and output mapping in `src/config/projectBriefQuestionnaire.ts`
+   - [x] Send completed questionnaire answers to the AI provider seam to create a coherent project overview
+   - [x] Document owner-facing questionnaire editing guidance in `PROJECT_BRIEF_QUESTIONNAIRE.md`
+   - [x] Normalize questionnaire typography and use embedded arrow submit buttons for message inputs
+
+3. **Canvas Chat Simplification** ✅
+   - [x] Remove the old Generate background description starter button from admin and guest canvas sessions
+
+4. **Threaded Story Connections** ✅
+   - [x] Add `threadId` and `color` metadata to connection state, API payloads, SQLite, Firestore adapters, exports, and PartyKit messages
+   - [x] Use thread colors to distinguish parallel story paths
+   - [x] Keep late upstream connections in the existing downstream thread when appropriate
+   - [x] Assemble only the current user's thread via **Assemble My Story**
+   - [x] Make individual connection strings selectable and deletable with Delete or Backspace
+   - [x] Allow multiple users to connect through the same cards with owner-aware connection IDs
+   - [x] Add Show/Hide Others' Threads visibility control
+   - [x] Clean invalid downstream connections when a user's path is reconfigured
+
+5. **Remaining Thread Management Polish**
+   - [ ] Expose whole-thread selection/deletion in addition to current single-connection deletion
+   - [x] Consider a lightweight thread legend or affordance if users need clearer thread identity
+
+6. **Project Overview Document Export**
+   - [ ] Replace the current browser-generated `.doc` HTML download with a real Word `.docx` export
+   - [ ] Support the export from both the Create Project Brief / overview screen and the canvas overview panel
+   - [ ] Prefer a server-side document generator such as `docx` so exported files are valid Office Open XML, not HTML renamed as `.doc`
+   - [ ] Include project/session name, Project Overview text, and optionally Additional Notes in a clean handoff-friendly template
+   - [ ] Decide whether guests with edit access can download directly from the same endpoint, using the existing session edit permission seam
+
+7. **ZIP Import / Session Restore**
+   - [ ] Add an upload/import flow that can ingest the same ZIP format currently produced by `GET /api/sessions/:id/export/zip`
+   - [ ] Treat exported ZIPs as portable project archives that can recreate or update a session
+   - [ ] Parse `session.json`, card markdown files, `connections.json`, and `attachments.json` when present
+   - [ ] Decide import modes: create a new session from ZIP, replace the current session, or merge into the current session
+   - [ ] Validate ZIP structure, reject unsafe paths, and avoid overwriting unrelated files or sessions
+   - [ ] Preserve IDs where safe so connections still point to the right cards; remap IDs when importing into an existing session to avoid collisions
+   - [ ] Document which attachment storage modes can restore original binaries versus metadata/extracted text only
+
 ### Phase 5: UX Enhancements
 **Priority: MEDIUM**
 
@@ -448,26 +501,36 @@ FILE_STORAGE_PATH=./data/sessions
 - [x] Per-session onboarding (admin only)
 - [x] "Setup in progress" screen for players during onboarding
 - [x] Password wall hides content until password entered
+- [x] Guests with edit access can return to the completed brief and save overview/notes edits
 - [x] Cards save to individual markdown files
 - [x] ZIP export working (backend)
 - [x] Markdown export working (backend)
+- [x] JSON export working (backend)
 - [x] Double-click editing on cards
 - [x] Consecutive card numbering
+- [x] Deterministic Create Project Brief questionnaire documented and wired to project overview generation
 
 ### Should Have (P1) - MOSTLY COMPLETED ✅
 - [ ] Help icons on all columns
 - [ ] Fullscreen mode
 - [x] Connect export buttons to backend
+- [ ] Real `.docx` Project Overview export from overview and canvas screens
+- [ ] Import exported ZIP archives to create, restore, or merge sessions
 - [x] Real-time sync (2+ users see changes) - ✅ PartyKit implemented
-- [x] Auto-save indicators - ✅ Real-time sync enabled
+- [x] Color-coded thread metadata for parallel story paths
+- [x] Per-user story assembly
+- [x] Individual connection selection/delete
+- [x] Show/Hide Others' Threads canvas control
+- [ ] Visual save indicator / last-saved timestamp
 
 > **Note:** Phase 4 (PartyKit) is now complete! Real-time multiplayer sync is working. When multiple users join a session, they will see each other's changes instantly.
 
-### Nice to Have (P2) - PENDING
-- [ ] JSON export
+### Nice to Have (P2) - PARTIAL
+- [x] JSON export
 - [ ] Session duplicate
 - [ ] Archive old sessions
 - [x] User presence indicators - ✅ Implemented with PartyKit
+- [ ] Thread management polish: expose whole-thread selection/deletion in addition to the current selectable single-connection delete behavior.
 
 ---
 
@@ -487,6 +550,6 @@ FILE_STORAGE_PATH=./data/sessions
 
 ---
 
-**Last Updated:** 2026-03-15
-**Status:** Phase 3 COMPLETE ✅ | Ready for Phase 4 (Multiplayer)
-**Next Step:** Implement PartyKit for real-time multiplayer sync
+**Last Updated:** 2026-05-16
+**Status:** Phase 4 COMPLETE ✅ | Guest Brief + Threaded Story Polish Active
+**Next Step:** Finish thread management polish, especially whole-thread selection/deletion and any needed thread identity affordance

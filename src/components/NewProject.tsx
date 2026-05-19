@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { UploadCloud, Save, Loader2, FileText, Image as ImageIcon, Pencil, Trash2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, CircleDashed, Sparkles } from 'lucide-react';
+import { UploadCloud, Save, Loader2, FileText, Image as ImageIcon, Pencil, Trash2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, CircleDashed, Sparkles, Download } from 'lucide-react';
 import type { ProjectAttachment } from '../types';
 
 interface NewProjectProps {
@@ -21,8 +21,11 @@ interface NewProjectProps {
   onUploadFiles: (files: FileList | null) => void;
   onGenerateBriefFromUploads: () => Promise<void>;
   onUseAttachmentText: (attachment: ProjectAttachment, target: 'background' | 'notes', source: 'summary' | 'full') => void;
+  onRenameAttachment: (attachmentId: string, name: string) => Promise<void>;
   onUpdateAttachmentNote: (attachmentId: string, note: string) => Promise<void>;
   onDeleteAttachment: (attachmentId: string) => Promise<void>;
+  canManageProjectName?: boolean;
+  canManageAttachments?: boolean;
 }
 
 export default function NewProject({
@@ -44,13 +47,18 @@ export default function NewProject({
   onUploadFiles,
   onGenerateBriefFromUploads,
   onUseAttachmentText,
+  onRenameAttachment,
   onUpdateAttachmentNote,
   onDeleteAttachment,
+  canManageProjectName = true,
+  canManageAttachments = true,
 }: NewProjectProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
   const [expandedAttachments, setExpandedAttachments] = useState<Record<string, boolean>>({});
+  const [editingAttachmentNameId, setEditingAttachmentNameId] = useState<string | null>(null);
+  const [attachmentNameDrafts, setAttachmentNameDrafts] = useState<Record<string, string>>({});
   const [attachmentNoteDrafts, setAttachmentNoteDrafts] = useState<Record<string, string>>({});
   const [savingAttachmentNoteId, setSavingAttachmentNoteId] = useState<string | null>(null);
 
@@ -99,6 +107,22 @@ export default function NewProject({
     return attachmentNoteDrafts[attachment.id] ?? attachment.note ?? '';
   };
 
+  const getAttachmentNameDraft = (attachment: ProjectAttachment) => {
+    return attachmentNameDrafts[attachment.id] ?? attachment.name;
+  };
+
+  const handleAttachmentNameSave = async (attachment: ProjectAttachment) => {
+    const nextName = getAttachmentNameDraft(attachment).trim();
+    if (!nextName || nextName === attachment.name) {
+      setAttachmentNameDrafts((prev) => ({ ...prev, [attachment.id]: attachment.name }));
+      setEditingAttachmentNameId(null);
+      return;
+    }
+
+    await onRenameAttachment(attachment.id, nextName);
+    setEditingAttachmentNameId(null);
+  };
+
   const handleAttachmentNoteBlur = async (attachment: ProjectAttachment) => {
     const nextNote = getAttachmentNoteDraft(attachment);
     if ((attachment.note || '') === nextNote) return;
@@ -109,6 +133,36 @@ export default function NewProject({
     } finally {
       setSavingAttachmentNoteId(null);
     }
+  };
+
+  const handleDownloadOverviewDoc = () => {
+    const overview = projectData.background.trim();
+    const title = projectData.client.trim() || projectName || 'Project Overview';
+    const safeFileName = `${title || 'project-overview'}-overview`
+      .replace(/[^a-z0-9-_]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'project-overview';
+    const escapeHtml = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    const paragraphs = (overview || 'No project overview has been written yet.')
+      .split(/\n{2,}/)
+      .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+      .join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{font-family:Arial,sans-serif;line-height:1.5;color:#111827;}h1{font-size:24px;}p{font-size:12pt;margin:0 0 12pt;}</style></head><body><h1>${escapeHtml(title)}</h1>${paragraphs}</body></html>`;
+    const blob = new Blob([html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${safeFileName}.doc`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -136,20 +190,24 @@ export default function NewProject({
         ) : (
           <div className="flex items-center gap-3">
             <h1 className="text-[2rem] font-bold tracking-tight">{projectName || 'Project Name'}</h1>
-            <button
-              onClick={() => {
-                setProjectNameDraft(projectName);
-                setIsEditingProjectName(true);
-              }}
-              className="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-              title="Edit project name"
-            >
-              <Pencil size={18} />
-            </button>
+            {canManageProjectName && (
+              <button
+                onClick={() => {
+                  setProjectNameDraft(projectName);
+                  setIsEditingProjectName(true);
+                }}
+                className="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                title="Edit project name"
+              >
+                <Pencil size={18} />
+              </button>
+            )}
           </div>
         )}
       </div>
 
+      {canManageAttachments && (
+      <>
       <div className="grid grid-cols-[320px_1px_1fr] gap-8 items-start mb-14">
         <div>
           <input
@@ -207,10 +265,51 @@ export default function NewProject({
                         onClick={() =>
                           setExpandedAttachments((prev) => ({ ...prev, [attachment.id]: !prev[attachment.id] }))
                         }
-                        className="flex items-center gap-2 text-left flex-1 min-w-0"
+                        className="flex items-center gap-2 text-left min-w-0"
+                        title={expanded ? 'Collapse upload' : 'Expand upload'}
                       >
                         {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                        <span className="truncate text-base text-gray-900">{attachment.name}</span>
+                      </button>
+                      {editingAttachmentNameId === attachment.id ? (
+                        <input
+                          value={getAttachmentNameDraft(attachment)}
+                          onChange={(e) =>
+                            setAttachmentNameDrafts((prev) => ({
+                              ...prev,
+                              [attachment.id]: e.target.value,
+                            }))
+                          }
+                          onBlur={() => handleAttachmentNameSave(attachment)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleAttachmentNameSave(attachment);
+                            if (e.key === 'Escape') {
+                              setAttachmentNameDrafts((prev) => ({ ...prev, [attachment.id]: attachment.name }));
+                              setEditingAttachmentNameId(null);
+                            }
+                          }}
+                          className="min-w-0 flex-1 border-b border-gray-300 bg-transparent text-base text-gray-900 outline-none focus:border-gray-900"
+                          autoFocus
+                        />
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setExpandedAttachments((prev) => ({ ...prev, [attachment.id]: !prev[attachment.id] }))
+                          }
+                          className="min-w-0 flex-1 truncate text-left text-base text-gray-900"
+                          title={attachment.name}
+                        >
+                          {attachment.name}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setAttachmentNameDrafts((prev) => ({ ...prev, [attachment.id]: attachment.name }));
+                          setEditingAttachmentNameId(attachment.id);
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-gray-900 transition-colors"
+                        title="Rename upload"
+                      >
+                        <Pencil size={16} />
                       </button>
                       <button
                         onClick={() => onDeleteAttachment(attachment.id)}
@@ -310,6 +409,8 @@ export default function NewProject({
         <div className="text-lg font-bold">OR</div>
         <div className="h-px flex-1 border-t border-dashed border-gray-400" />
       </div>
+      </>
+      )}
 
       <div className="mb-10">
         <label className="block text-[1.75rem] font-bold mb-5">Project Overview</label>
@@ -331,6 +432,13 @@ export default function NewProject({
             <>Save changes <Save size={20} /></>
           )}
         </button>
+        <button
+          onClick={handleDownloadOverviewDoc}
+          disabled={isGenerating || isSavingProjectChanges || isRegeneratingCards}
+          className="w-full mt-3 py-4 bg-white text-gray-900 hover:bg-gray-50 border border-gray-300 rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
+        >
+          Download Overview as Doc <Download size={20} />
+        </button>
         {showGenerateCanvasButton && (
           <button
             onClick={onStart}
@@ -346,7 +454,7 @@ export default function NewProject({
         )}
         {showRegenerateCardsButton && onRegenerateCards && (
           <button
-            onClick={onRegenerateCards}
+            onClick={() => onRegenerateCards()}
             disabled={isGenerating || isSavingProjectChanges || isRegeneratingCards}
             className="w-full mt-3 py-4 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
           >

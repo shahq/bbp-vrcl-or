@@ -1,0 +1,10 @@
+---
+id: card-1779153558166
+section: change
+createdAt: '2026-05-19T01:19:18.306Z'
+updatedAt: '2026-05-19T01:19:18.306Z'
+starred: false
+order: 1
+---
+
+You are transitioning from structured performance models to fluid, organic, human gathering.

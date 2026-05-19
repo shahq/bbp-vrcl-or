@@ -24,6 +24,14 @@ export interface CardFile {
   content: string;
 }
 
+export function serializeCardFile(frontmatter: CardFrontmatter, content: string): string {
+  return `---
+${yaml.dump(frontmatter)}---
+
+${content}
+`;
+}
+
 export function getSessionDir(sessionId: string): string {
   return path.join(DATA_DIR, 'sessions', sessionId);
 }
@@ -115,11 +123,7 @@ export function writeCardFile(
     order
   };
   
-  const fileContent = `---
-${yaml.dump(frontmatter)}---
-
-${content}
-`;
+  const fileContent = serializeCardFile(frontmatter, content);
   
   fs.writeFileSync(filePath, fileContent, 'utf-8');
   
@@ -170,11 +174,7 @@ export function updateCardFile(
     
     const content = newContent !== undefined ? newContent : cardFile.content;
     
-    const fileContent = `---
-${yaml.dump(updatedFrontmatter)}---
-
-${content}
-`;
+    const fileContent = serializeCardFile(updatedFrontmatter, content);
     
     fs.writeFileSync(fullPath, fileContent, 'utf-8');
     return true;
@@ -239,7 +239,7 @@ export function writeSessionMetadata(
 
 export function writeConnections(
   sessionId: string,
-  connections: Array<{ id: string; from: string; to: string }>
+  connections: Array<{ id: string; from: string; to: string; threadId?: string; color?: string; ownerUserId?: string }>
 ): void {
   ensureSessionDir(sessionId);
   

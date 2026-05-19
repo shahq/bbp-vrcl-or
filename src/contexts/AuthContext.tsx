@@ -5,7 +5,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { apiUrl } from '../config/api';
+import { checkAdminSession, logoutAdminSession } from '../services/adminAuth';
 
 interface AuthContextType {
   adminSessionId: string | null;
@@ -42,17 +42,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const response = await fetch(apiUrl('/api/admin/check'), {
-        headers: { 'x-admin-session': storedSessionId }
-      });
-
-      if (!response.ok) {
-        clearAdminSession();
-        return false;
-      }
-
-      const data = await response.json();
-      if (!data.isAuthenticated) {
+      const isAuthenticated = await checkAdminSession(storedSessionId);
+      if (!isAuthenticated) {
         clearAdminSession();
         return false;
       }
@@ -83,11 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     if (adminSessionId) {
       try {
-        await fetch(apiUrl('/api/admin/logout'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: adminSessionId })
-        });
+        await logoutAdminSession(adminSessionId);
       } catch (error) {
         console.error('Logout error:', error);
       }

@@ -1,4 +1,5 @@
 import { apiUrl } from '../config/api';
+import type { ProjectBriefQuestion, ProjectBriefQuestionnaire } from '../config/projectBriefQuestionnaire';
 import { CardData, ProjectAttachment } from '../types';
 
 export type ModelType = string;
@@ -13,6 +14,16 @@ interface ChatGenerationContext {
     extractedText?: string;
     note?: string;
   }>;
+}
+
+function assertNonStoryCardVoice(cards: Array<{ section: string; content: string }>) {
+  const invalidCards = cards.filter((card) =>
+    card.section !== 'story' && !card.content.trim().startsWith('You are')
+  );
+
+  if (invalidCards.length > 0) {
+    throw new Error('The AI model returned cards that do not start with "You are". Please regenerate.');
+  }
 }
 
 async function requestTextCompletion(
@@ -98,7 +109,9 @@ export async function generateCards(client: string, background: string, notes: s
 
     Make the ideas concise, engaging, and directly related to the provided context.
     Each idea must be a single sentence of maximum 100 characters.
-    Address the business/client directly in the third person (e.g., "You are...", "They are...").
+    Every content value must start with the exact words "You are".
+    Do not start any card with "The", "They", "We", "It", "Your", "You must", or "You need".
+    Use second-person framing consistently, for example: "You are balancing precise logistics with an informal outdoor dining experience."
     
     IMPORTANT: You must return ONLY a valid JSON array of objects. Do not include markdown formatting like \`\`\`json.
     Ensure all double quotes inside the content strings are properly escaped (e.g., \\").
@@ -129,7 +142,7 @@ export async function generateCards(client: string, background: string, notes: s
     
     const validSections = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change'];
     
-    return parsed
+    const cards = parsed
       .filter((item: any) => validSections.includes(item.section))
       .map((item: any, index: number) => ({
         id: `gen-c${index}`,
@@ -137,6 +150,9 @@ export async function generateCards(client: string, background: string, notes: s
         content: item.content,
         starred: false
       }));
+
+    assertNonStoryCardVoice(cards);
+    return cards;
   } catch (error) {
     console.error("Error generating cards:", error);
     throw error;
@@ -162,50 +178,21 @@ export async function generateSingleIdea(client: string, background: string, not
     - story: A creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles and mapping out the path to success.
 
     The idea must be a single sentence of maximum 100 characters.
-    Address the business/client directly in the third person (e.g., "You are...", "They are...").
+    ${section === 'story'
+      ? 'For the story section, write a short creative story sentence.'
+      : 'The idea must start with the exact words "You are". Do not start with "The", "They", "We", "It", "Your", "You must", or "You need".'}
     Return ONLY the idea text, nothing else.
   `;
 
   try {
     const responseText = await requestTextCompletion(prompt, model);
-    return responseText.trim() || "Generated idea";
+    const idea = responseText.trim() || "Generated idea";
+    if (section !== 'story' && !idea.startsWith('You are')) {
+      throw new Error('The AI model returned an idea that does not start with "You are". Please try again.');
+    }
+    return idea;
   } catch (error) {
     console.error("Error generating single idea:", error);
-    throw error;
-  }
-}
-
-export async function synthesizeNoteIntoCard(
-  client: string,
-  background: string,
-  projectNotes: string,
-  sourceCard: Pick<CardData, 'section' | 'content'>,
-  noteText: string,
-  model: ModelType = 'minimax-m2.5'
-): Promise<string> {
-  const prompt = `
-    You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-    Turn the user's note into ONE concise card sentence for the "${sourceCard.section}" section.
-
-    Client: ${client || 'Unknown Client'}
-    Background: ${background || 'No background provided.'}
-    Project Notes: ${projectNotes || 'None.'}
-    Selected Card: ${sourceCard.content || 'No selected card content.'}
-    User Note:
-    ${noteText}
-
-    Requirements:
-    - Return only the new card sentence.
-    - Maximum 100 characters.
-    - Keep it concrete and useful for the current section.
-    - Do not include quotes, markdown, bullets, labels, or explanation.
-  `;
-
-  try {
-    const responseText = await requestTextCompletion(prompt, model);
-    return responseText.trim().replace(/^["']|["']$/g, '') || "Synthesized card idea";
-  } catch (error) {
-    console.error("Error synthesizing note into card:", error);
     throw error;
   }
 }
@@ -217,13 +204,14 @@ export async function generateBriefFromUploads(
   attachments: ProjectAttachment[],
   model: ModelType = 'minimax-m2.5'
 ): Promise<string> {
-  const sourceContext = attachments
-    .filter((attachment) => attachment.summary.trim() || attachment.extractedText.trim() || attachment.note?.trim())
-    .slice(0, 8)
+  const usableAttachments = attachments
+    .filter((attachment) => attachment.summary.trim() || attachment.extractedText.trim() || attachment.note?.trim());
+
+  const sourceContext = usableAttachments
     .map((attachment, index) => {
       const extractedText = attachment.extractedText.trim();
-      const excerpt = extractedText.length > 7000
-        ? `${extractedText.slice(0, 7000)}\n[Excerpt truncated]`
+      const excerpt = extractedText.length > 5000
+        ? `${extractedText.slice(0, 5000)}\n[Excerpt truncated]`
         : extractedText;
 
       return `
@@ -253,7 +241,8 @@ ${excerpt ? `Extracted text excerpt:\n${excerpt}` : ''}
 
     Requirements:
     - Return only the project overview text.
-    - Synthesize the documents; do not list files one by one.
+    - Synthesize across all ${usableAttachments.length} uploaded source document${usableAttachments.length === 1 ? '' : 's'}; do not rely on only the first or last source.
+    - Do not list files one by one in the final brief.
     - Preserve important client context, goals, current needs, challenges, stakeholders, constraints, and success outcomes when present.
     - Use clear business language a facilitator can review and edit.
     - Do not invent facts not supported by the source material.
@@ -267,6 +256,55 @@ ${excerpt ? `Extracted text excerpt:\n${excerpt}` : ''}
     return responseText.trim() || 'Generated project overview';
   } catch (error) {
     console.error('Error generating brief from uploads:', error);
+    throw error;
+  }
+}
+
+export async function generateProjectOverviewFromQuestionnaire(
+  questionnaire: ProjectBriefQuestionnaire,
+  answers: Record<string, string>,
+  existingBackground: string,
+  notes: string,
+  model: ModelType = 'minimax-m2.5'
+): Promise<string> {
+  const answerContext = questionnaire.questions
+    .map((question: ProjectBriefQuestion) => {
+      const answer = answers[question.id]?.trim();
+      return `${question.shortLabel} (${question.aiContextKey}):\n${answer || 'Not provided.'}`;
+    })
+    .join('\n\n');
+
+  const prompt = `
+    You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
+    Turn the structured questionnaire answers into a clean Project Overview / brief that can be pasted directly into the app's Project Overview field.
+
+    Questionnaire version: ${questionnaire.version}
+
+    Questionnaire answers:
+    ${answerContext}
+
+    Existing Project Overview, if any:
+    ${existingBackground || 'None yet.'}
+
+    Additional notes from facilitator:
+    ${notes || 'None.'}
+
+    Requirements:
+    - Return only the project overview text.
+    - Synthesize the answers into coherent prose; do not list the questions one by one.
+    - Preserve the client, project purpose, current situation, audience need, challenge, constraints, and success outcome when present.
+    - Use clear business language a facilitator can review and edit.
+    - Do not invent facts not present in the answers, existing overview, or notes.
+    - If there is an existing overview, improve and integrate it instead of ignoring it.
+    - Keep it concise but useful, around 3-5 short paragraphs.
+    - Do not use markdown headings, bullets, labels, or quoted wrappers.
+  `;
+
+  try {
+    const responseText = await requestTextCompletion(prompt, model);
+    return responseText.trim() || 'Generated project overview';
+  } catch (error) {
+    console.error('Error generating project overview from questionnaire:', error);
     throw error;
   }
 }

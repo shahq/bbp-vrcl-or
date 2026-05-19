@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import PartySocket from 'partysocket';
 import type { Message, UserPresence, LiveConnection } from '../../party/index';
-import type { CardData } from '../types';
+import type { CardData, ConnectionData } from '../types';
 import {
   PARTYKIT_HOST,
   PARTYKIT_HTTP_PROTOCOL,
@@ -19,11 +19,12 @@ interface UsePartyKitOptions {
   onCardUpdate?: (cardId: string, updates: Partial<CardData>) => void;
   onCardDelete?: (cardId: string) => void;
   onCardReorder?: (section: string, cardIds: string[]) => void;
-  onConnectionCreate?: (connection: { id: string; from: string; to: string }) => void;
+  onConnectionCreate?: (connection: ConnectionData) => void;
   onConnectionDelete?: (connectionId: string) => void;
   onCursorMove?: (userId: string, x: number, y: number) => void;
   onUserLeave?: (userId: string) => void;
   onKicked?: (message: string) => void;
+  onProjectUpdate?: (updates: { project_client?: string; project_background?: string; project_notes?: string }) => void;
 }
 
 interface UsePartyKitReturn {
@@ -38,11 +39,12 @@ interface UsePartyKitReturn {
   sendCardUpdate: (cardId: string, updates: Partial<CardData>) => void;
   sendCardDelete: (cardId: string) => void;
   sendCardReorder: (section: string, cardIds: string[]) => void;
-  sendConnectionCreate: (connection: { id: string; from: string; to: string }) => void;
+  sendConnectionCreate: (connection: ConnectionData) => void;
   sendConnectionDelete: (connectionId: string) => void;
   sendPresenceUpdate: (updates: Partial<UserPresence>) => void;
   sendCursorMove: (x: number, y: number) => void;
   sendAdminKick: (connectionId: string, userId?: string | null) => void;
+  sendProjectUpdate: (updates: { project_client?: string; project_background?: string; project_notes?: string }) => void;
   reconnect: () => void;
 }
 
@@ -61,6 +63,7 @@ export function usePartyKit({
   onCursorMove,
   onUserLeave,
   onKicked,
+  onProjectUpdate,
 }: UsePartyKitOptions): UsePartyKitReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -84,6 +87,7 @@ export function usePartyKit({
     onCursorMove,
     onUserLeave,
     onKicked,
+    onProjectUpdate,
   });
   const userPresenceRef = useRef<UserPresence>({
     id: userId,
@@ -116,6 +120,7 @@ export function usePartyKit({
       onCursorMove,
       onUserLeave,
       onKicked,
+      onProjectUpdate,
     };
   }, [
     onCardCreate,
@@ -126,6 +131,7 @@ export function usePartyKit({
     onConnectionDelete,
     onCursorMove,
     onKicked,
+    onProjectUpdate,
     onUserLeave,
   ]);
 
@@ -176,6 +182,12 @@ export function usePartyKit({
         const data = JSON.parse(event.data) as Message;
 
         switch (data.type) {
+          case 'project:update':
+            if (data.userId !== userId && callbacksRef.current.onProjectUpdate) {
+              callbacksRef.current.onProjectUpdate(data.updates);
+            }
+            break;
+
           case 'card:create':
             if (data.userId !== userId && callbacksRef.current.onCardCreate) {
               callbacksRef.current.onCardCreate(data.card);
@@ -357,7 +369,7 @@ export function usePartyKit({
     }
   }, [userId]);
 
-  const sendConnectionCreate = useCallback((connection: { id: string; from: string; to: string }) => {
+  const sendConnectionCreate = useCallback((connection: ConnectionData) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       const message: Message = {
         type: 'connection:create',
@@ -427,6 +439,18 @@ export function usePartyKit({
     }
   }, []);
 
+  const sendProjectUpdate = useCallback((updates: { project_client?: string; project_background?: string; project_notes?: string }) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      const message: Message = {
+        type: 'project:update',
+        updates,
+        timestamp: Date.now(),
+        userId,
+      };
+      socketRef.current.send(JSON.stringify(message));
+    }
+  }, [userId]);
+
   const reconnect = useCallback(() => {
     if (socketRef.current) {
       kickedMessageRef.current = null;
@@ -451,6 +475,7 @@ export function usePartyKit({
     sendPresenceUpdate,
     sendCursorMove,
     sendAdminKick,
+    sendProjectUpdate,
     reconnect,
   };
 }

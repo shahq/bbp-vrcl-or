@@ -7,12 +7,11 @@ interface ActiveUsersProps {
 }
 
 export function ActiveUsers({ users, currentUserId }: ActiveUsersProps) {
-  const uniqueUsers = Array.from(
-    new Map(users.filter(user => user.id !== currentUserId).map(user => [user.id, user])).values()
-  );
-  const totalActive = currentUserId ? uniqueUsers.length + 1 : uniqueUsers.length;
+  const uniqueUsers = Array.from(new Map(users.map(user => [user.id, user])).values());
+  const otherUsers = uniqueUsers.filter(user => user.id !== currentUserId);
+  const totalActive = Math.max(uniqueUsers.length, currentUserId ? 1 : 0);
 
-  if (uniqueUsers.length === 0) {
+  if (otherUsers.length === 0) {
     return (
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <div className="w-2 h-2 rounded-full bg-gray-300" />
@@ -29,7 +28,7 @@ export function ActiveUsers({ users, currentUserId }: ActiveUsersProps) {
       </div>
       
       <div className="flex -space-x-2">
-        {uniqueUsers.slice(0, 4).map((user) => (
+        {otherUsers.slice(0, 4).map((user) => (
           <div key={user.id} className="group relative">
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm"
@@ -44,9 +43,9 @@ export function ActiveUsers({ users, currentUserId }: ActiveUsersProps) {
             </div>
           </div>
         ))}
-        {uniqueUsers.length > 4 && (
+        {otherUsers.length > 4 && (
           <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-bold border-2 border-white">
-            +{uniqueUsers.length - 4}
+            +{otherUsers.length - 4}
           </div>
         )}
       </div>

@@ -70,4 +70,19 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_connections_session ON connections(session_id);
 `);
 
+const connectionColumns = db.prepare(`PRAGMA table_info(connections)`).all() as Array<{ name: string }>;
+const hasConnectionColumn = (name: string) => connectionColumns.some((column) => column.name === name);
+
+if (!hasConnectionColumn('thread_id')) {
+  db.exec(`ALTER TABLE connections ADD COLUMN thread_id TEXT`);
+}
+
+if (!hasConnectionColumn('color')) {
+  db.exec(`ALTER TABLE connections ADD COLUMN color TEXT`);
+}
+
+if (!hasConnectionColumn('owner_user_id')) {
+  db.exec(`ALTER TABLE connections ADD COLUMN owner_user_id TEXT`);
+}
+
 export default db;

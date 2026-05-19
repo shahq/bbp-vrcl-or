@@ -7,10 +7,16 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import db from './db';
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'shazam!';
 const SESSION_DURATION_HOURS = 8;
-const PARTYKIT_ADMIN_SECRET = process.env.PARTYKIT_ADMIN_SECRET || ADMIN_PASSWORD;
 const PARTYKIT_TOKEN_DURATION_MS = 15 * 60 * 1000;
+
+function getAdminPassword(): string {
+  return process.env.ADMIN_PASSWORD || 'shazam!';
+}
+
+function getPartyKitAdminSecret(): string {
+  return process.env.PARTYKIT_ADMIN_SECRET || getAdminPassword();
+}
 
 export interface AdminSession {
   id: string;
@@ -58,7 +64,7 @@ export function cleanupExpiredSessions(): void {
 }
 
 export function verifyAdminPassword(password: string): boolean {
-  return password === ADMIN_PASSWORD;
+  return password === getAdminPassword();
 }
 
 export function createPartyKitAdminToken(sessionId: string): string {
@@ -69,7 +75,7 @@ export function createPartyKitAdminToken(sessionId: string): string {
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', PARTYKIT_ADMIN_SECRET)
+    .createHmac('sha256', getPartyKitAdminSecret())
     .update(encodedPayload)
     .digest('base64url');
 

@@ -9,6 +9,15 @@ export interface CardData {
   order?: number;
 }
 
+export interface ConnectionData {
+  id: string;
+  from: string;
+  to: string;
+  threadId?: string;
+  color?: string;
+  ownerUserId?: string;
+}
+
 export interface Project {
   id: string;
   name: string;

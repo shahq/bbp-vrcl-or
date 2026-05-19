@@ -44,10 +44,13 @@ The only user-facing area that may change slightly is admin authentication, but 
 
 ### Replace
 
-- `ADMIN_PASSWORD` auth with Firebase Auth-backed admin access
 - SQLite session/card/connection storage with Firestore
 - local attachment and session files with Cloud Storage and Firestore metadata
 - generic Node hosting with Cloud Run
+
+### Defer For Alpha
+
+- `ADMIN_PASSWORD` auth with Firebase Auth-backed admin access
 
 ## Why Cloud Run
 
@@ -131,6 +134,12 @@ Target:
 - server verifies Firebase ID tokens
 - Firestore or custom claims define admin authorization
 
+Alpha note:
+
+- Firebase Auth is intentionally deferred for the alpha if the admin group remains small and trusted
+- keep the current shared admin password as a temporary measure
+- revisit Firebase Auth before broader handoff or when admin membership needs to be managed by the client directly
+
 ### Sessions
 
 Current:
@@ -195,6 +204,8 @@ Target:
 
 Use staged backend migration, but keep the repo moving toward the final Firebase backend rather than introducing a temporary non-Google host.
 
+For alpha, prioritize runtime, data, and file-storage migration first. Admin auth can remain on the current password flow temporarily as long as the deployment stays limited to trusted internal users.
+
 ## Phase 1 - Create Backend Seams
 
 Objective:
@@ -252,6 +263,11 @@ Move backend runtime ownership into the client's Google environment without chan
 Objective:
 
 Replace shared admin password auth with Firebase Auth-backed admin access.
+
+Alpha note:
+
+- this phase can be deferred until after Firestore and Cloud Storage are in place
+- keeping the current admin password flow for a small trusted agency team is acceptable for alpha
 
 ### Current code to replace
 
@@ -330,6 +346,21 @@ Objective:
 
 Replace local attachment storage with Cloud Storage while keeping extraction and summaries server-side.
 
+### Alpha compromise before Blaze / Cloud Storage
+
+If the project stays off Blaze during alpha, use an intermediate temporary-upload mode:
+
+- original uploaded binaries are written to temporary server storage only long enough for extraction
+- extracted text, summaries, upload metadata, and source notes persist in Firestore
+- ZIP export includes `attachments.json` and a note when original binaries are unavailable
+- this keeps the upload-driven briefing workflow intact without pretending files are durable
+
+Recommended alpha env value:
+
+```text
+ATTACHMENT_STORE_PROVIDER=ephemeral
+```
+
 ### Current code to replace
 
 - [src/server/files.ts](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/src/server/files.ts)
@@ -361,6 +392,7 @@ sessions/{sessionId}/attachments/{attachmentId}
 
 - no attachment dependence on local disk
 - exports and summarization continue to work with the same UX
+- until Cloud Storage is enabled, temporary upload mode is acceptable for alpha but should be documented as non-durable
 
 ## Phase 6 - Import Existing Data
 
@@ -450,10 +482,10 @@ That means:
 
 1. introduce backend interfaces and adapter seams
 2. move runtime to Cloud Run
-3. add Firebase Auth-backed admin path
-4. migrate sessions/cards/connections to Firestore
-5. migrate attachments to Cloud Storage
-6. import existing data
+3. migrate sessions/cards/connections to Firestore
+4. migrate attachments to Cloud Storage
+5. import existing data
+6. add Firebase Auth-backed admin path when client admin management requires it
 7. remove SQLite/local-file runtime dependence
 
 ## Recommendation

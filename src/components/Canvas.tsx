@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Star, Plus, Save, Download, Sparkles, Loader2, Trash2, FileText } from 'lucide-react';
 import { COLUMNS } from '../data';
-import { CardData } from '../types';
+import { CardData, ConnectionData, Section } from '../types';
 import { apiUrl } from '../config/api';
 import { motion } from 'motion/react';
 import InfiniteCanvas from './InfiniteCanvas';
@@ -25,25 +25,51 @@ interface CanvasProps {
   onCardUpdate?: (cardId: string, updates: Partial<CardData>) => Promise<void>;
   onCardAdd?: (card: Omit<CardData, 'id'>) => Promise<string | undefined>;
   onCursorMove?: (x: number, y: number) => void;
-  connections?: Array<{ id: string; from: string; to: string }>;
+  connections?: ConnectionData[];
   onCardDelete?: (cardId: string) => Promise<void>;
   onCardReorder?: (section: string, cardIds: string[]) => Promise<void>;
-  onConnectionCreate?: (from: string, to: string) => Promise<void>;
+  onConnectionCreate?: (from: string, to: string, threadId?: string, color?: string, ownerUserId?: string) => Promise<void>;
   onConnectionDelete?: (connectionId: string) => Promise<void>;
   activeUsers?: UserPresence[];
   currentUserId?: string;
+  currentUserColor?: string;
   activeTutorial?: TutorialItem | null;
   onCloseTutorial?: () => void;
 }
 
 interface ConnectionLineProps {
+  connectionId?: string;
   startId: string;
   endId: string;
   isDrawing?: boolean;
   refreshKey?: string;
+  color?: string;
+  isSelected?: boolean;
+  onSelect?: (connectionId: string) => void;
+  interactive?: boolean;
 }
 
-const ConnectionLine: React.FC<ConnectionLineProps> = ({ startId, endId, isDrawing = false, refreshKey }) => {
+const COLUMN_ORDER: Section[] = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change', 'story'];
+
+function getColumnIndex(section: Section | undefined) {
+  return section ? COLUMN_ORDER.indexOf(section) : -1;
+}
+
+function isStorySection(section: Section | undefined) {
+  return section === 'story';
+}
+
+const ConnectionLine: React.FC<ConnectionLineProps> = ({
+  connectionId,
+  startId,
+  endId,
+  isDrawing = false,
+  refreshKey,
+  color = '#6366f1',
+  isSelected = false,
+  onSelect,
+  interactive = false,
+}) => {
   const [path, setPath] = useState('');
 
   useEffect(() => {
@@ -67,8 +93,10 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({ startId, endId, isDrawi
         const endX = (endRect.left - containerRect.left + endRect.width / 2) / scale;
         const endY = (endRect.top - containerRect.top + endRect.height / 2) / scale;
 
-        const dx = Math.max(Math.abs(endX - startX) * 0.5, 50);
-        setPath(`M ${startX} ${startY} C ${startX + dx} ${startY}, ${endX - dx} ${endY}, ${endX} ${endY}`);
+        const pathStartX = startX;
+        const pathEndX = endX;
+        const dx = Math.max(Math.abs(pathEndX - pathStartX) * 0.5, 50);
+        setPath(`M ${pathStartX} ${startY} C ${pathStartX + dx} ${startY}, ${pathEndX - dx} ${endY}, ${pathEndX} ${endY}`);
       } else {
         setPath('');
       }
@@ -97,29 +125,49 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({ startId, endId, isDrawi
 
   if (!path) return null;
 
-  const markerId = `arrowhead-${startId}-${endId}`;
-
   return (
-    <svg className="absolute inset-0 pointer-events-none z-0" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-      <defs>
-        <marker id={markerId} markerWidth="3" markerHeight="2" refX="2.5" refY="1" orient="auto">
-          <polygon points="0 0, 3 1, 0 2" fill="#6366f1" />
-        </marker>
-      </defs>
+    <svg
+      className={`absolute inset-0 pointer-events-none ${interactive ? 'z-20' : 'z-0'}`}
+      style={{ width: '100%', height: '100%', overflow: 'visible' }}
+    >
+      {connectionId && (
+        <path
+          d={path}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={18}
+          strokeLinecap="round"
+          className="cursor-pointer"
+          style={{ pointerEvents: 'stroke' }}
+          onClick={(event) => {
+            event.stopPropagation();
+              onSelect?.(connectionId);
+          }}
+        />
+      )}
       <path 
         d={path} 
         fill="none" 
-        stroke="#6366f1" 
-        strokeWidth={3} 
+        stroke={color} 
+        strokeWidth={isSelected ? 5 : 3} 
         strokeLinecap="round" 
         strokeDasharray={isDrawing ? "5,5" : "none"}
-        markerEnd={`url(#${markerId})`}
+        className={connectionId ? 'cursor-pointer' : undefined}
+        style={{
+          filter: isSelected ? `drop-shadow(0 0 4px ${color})` : undefined,
+          pointerEvents: connectionId ? 'stroke' : 'none',
+        }}
+        onClick={(event) => {
+          if (!connectionId) return;
+          event.stopPropagation();
+              onSelect?.(connectionId);
+        }}
       />
     </svg>
   );
 }
 
-export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], currentUserId = '', activeTutorial, onCloseTutorial }: CanvasProps) {
+export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], currentUserId = '', currentUserColor = '#6366f1', activeTutorial, onCloseTutorial }: CanvasProps) {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
@@ -127,6 +175,8 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
   const [drawingLine, setDrawingLine] = useState<{ startNodeId: string, endX: number, endY: number, startX: number, startY: number } | null>(null);
 
   const [generatingCards, setGeneratingCards] = useState<Record<string, boolean>>({});
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [showOtherUsersConnections, setShowOtherUsersConnections] = useState(true);
 
   
   // Track which card is being edited inline
@@ -140,6 +190,161 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
   const scaleRef = useRef(scale);
   const cursorFrameRef = useRef<number | null>(null);
   const latestCursorPositionRef = useRef<{ clientX: number; clientY: number } | null>(null);
+
+  const getSourceCardId = useCallback((startNodeId: string): string | null => {
+    if (startNodeId.startsWith('node-right-')) {
+      return startNodeId.replace('node-right-', '');
+    }
+    if (startNodeId.startsWith('card-body-')) {
+      return startNodeId.replace('card-body-', '');
+    }
+    return null;
+  }, []);
+
+  const getCardSection = useCallback((cardId: string) => (
+    cards.find((card) => card.id === cardId)?.section
+  ), [cards]);
+
+  const isCurrentUserConnection = useCallback((connection: ConnectionData) => {
+    if (currentUserId && connection.ownerUserId) {
+      return connection.ownerUserId === currentUserId;
+    }
+    if (currentUserColor && connection.color) {
+      return connection.color === currentUserColor;
+    }
+    return false;
+  }, [currentUserColor, currentUserId]);
+
+  const getCurrentUserConnections = useCallback(() => (
+    connections.filter(isCurrentUserConnection)
+  ), [connections, isCurrentUserConnection]);
+
+  const getCurrentUserThreadId = useCallback(() => {
+    return getCurrentUserConnections().find((connection) => connection.threadId)?.threadId
+      || (currentUserId ? `thread-${currentUserId}` : `thread-${currentUserColor.replace(/[^a-zA-Z0-9_-]/g, '')}`);
+  }, [currentUserColor, currentUserId, getCurrentUserConnections]);
+
+  const getDownstreamConnectionIds = useCallback((startCardId: string, sourceConnections = getCurrentUserConnections()) => {
+    const ids = new Set<string>();
+    const visitedCards = new Set<string>();
+
+    const walk = (cardId: string) => {
+      if (visitedCards.has(cardId)) return;
+      visitedCards.add(cardId);
+
+      sourceConnections
+        .filter((connection) => connection.from === cardId)
+        .forEach((connection) => {
+          ids.add(connection.id);
+          walk(connection.to);
+        });
+    };
+
+    walk(startCardId);
+    return Array.from(ids);
+  }, [getCurrentUserConnections]);
+
+  const getConnectionBreakCleanupIds = useCallback((connection: ConnectionData) => {
+    return [connection.id, ...getDownstreamConnectionIds(connection.to)];
+  }, [getDownstreamConnectionIds]);
+
+  const getCardDeleteCleanupConnectionIds = useCallback((cardId: string) => {
+    const ids = new Set<string>();
+
+    connections
+      .filter((connection) => connection.from === cardId || connection.to === cardId)
+      .forEach((connection) => ids.add(connection.id));
+
+    getDownstreamConnectionIds(cardId).forEach((connectionId) => ids.add(connectionId));
+
+    return Array.from(ids);
+  }, [connections, getDownstreamConnectionIds]);
+
+  const deleteConnections = useCallback(async (connectionIds: string[]) => {
+    const uniqueConnectionIds = Array.from(new Set(connectionIds));
+    if (uniqueConnectionIds.length === 0) return;
+
+    try {
+      await Promise.all(uniqueConnectionIds.map((connectionId) => onConnectionDelete?.(connectionId)));
+      setSelectedConnectionId((current) => (
+        current && uniqueConnectionIds.includes(current) ? null : current
+      ));
+    } catch (error) {
+      console.error('Error deleting connection:', error);
+      showToast('Failed to delete connection');
+    }
+  }, [onConnectionDelete, showToast]);
+
+  const ownedThreadConnections = getCurrentUserConnections();
+  const connectedCardIdsBySection = ownedThreadConnections.reduce((sections, connection) => {
+    [connection.from, connection.to].forEach((cardId) => {
+      const section = getCardSection(cardId);
+      if (!section) return;
+      if (!sections.has(section)) sections.set(section, new Set<string>());
+      sections.get(section)!.add(cardId);
+    });
+    return sections;
+  }, new Map<string, Set<string>>());
+
+  const canStartConnectionFromCard = useCallback((cardId: string) => {
+    const section = getCardSection(cardId);
+    if (!section || isStorySection(section)) return true;
+    const connectedCardIds = connectedCardIdsBySection.get(section);
+    return !connectedCardIds || connectedCardIds.has(cardId);
+  }, [connectedCardIdsBySection, getCardSection]);
+
+  const isCardDimmedByThread = useCallback((cardId: string) => {
+    const section = getCardSection(cardId);
+    if (!section || isStorySection(section)) return false;
+    const connectedCardIds = connectedCardIdsBySection.get(section);
+    return Boolean(connectedCardIds && !connectedCardIds.has(cardId));
+  }, [connectedCardIdsBySection, getCardSection]);
+
+  const getConnectionThreadMeta = useCallback((fromCardId: string, toCardId: string) => {
+    return {
+      threadId: getCurrentUserThreadId(),
+      color: currentUserColor,
+      ownerUserId: currentUserId,
+    };
+  }, [currentUserColor, currentUserId, getCurrentUserThreadId]);
+
+  const createThreadedConnection = useCallback(async (fromCardId: string, toCardId: string) => {
+    if (getCurrentUserConnections().some((connection) => connection.from === fromCardId && connection.to === toCardId)) return;
+    const { threadId, color, ownerUserId } = getConnectionThreadMeta(fromCardId, toCardId);
+    const sourceSection = getCardSection(fromCardId);
+    const targetSection = getCardSection(toCardId);
+
+    if (getColumnIndex(targetSection) <= getColumnIndex(sourceSection)) {
+      showToast('Connect cards from left to right across the story columns');
+      return;
+    }
+
+    const cleanupIds = new Set<string>();
+    const currentUserConnections = getCurrentUserConnections();
+
+    currentUserConnections
+      .filter((connection) => connection.from === fromCardId || connection.to === toCardId)
+      .forEach((connection) => getConnectionBreakCleanupIds(connection).forEach((id) => cleanupIds.add(id)));
+
+    if (targetSection) {
+      currentUserConnections
+        .filter((connection) => {
+          const fromSection = getCardSection(connection.from);
+          const toSection = getCardSection(connection.to);
+          return (
+            (fromSection === targetSection && connection.from !== toCardId)
+            || (toSection === targetSection && connection.to !== toCardId)
+          );
+        })
+        .forEach((connection) => getConnectionBreakCleanupIds(connection).forEach((id) => cleanupIds.add(id)));
+    }
+
+    if (cleanupIds.size > 0) {
+      await deleteConnections(Array.from(cleanupIds));
+    }
+
+    onConnectionCreate?.(fromCardId, toCardId, threadId, color, ownerUserId);
+  }, [connections, deleteConnections, getCardSection, getConnectionBreakCleanupIds, getConnectionThreadMeta, getCurrentUserConnections, onConnectionCreate, showToast]);
 
   const handlePanChange = useCallback((nextPan: { x: number; y: number }) => {
     panRef.current = nextPan;
@@ -187,16 +392,6 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       return null;
     };
 
-    const getSourceCardId = (startNodeId: string): string | null => {
-      if (startNodeId.startsWith('node-right-')) {
-        return startNodeId.replace('node-right-', '');
-      }
-      if (startNodeId.startsWith('card-')) {
-        return startNodeId.replace('card-', '');
-      }
-      return null;
-    };
-
     const handlePointerUp = (e: PointerEvent) => {
       if (drawingLine) {
         const dummy = document.getElementById('cursor-dummy');
@@ -210,9 +405,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         const toCardId = findTargetCardId(el);
 
         if (fromCardId && toCardId && fromCardId !== toCardId) {
-          if (!connections.some(c => c.from === fromCardId && c.to === toCardId)) {
-            onConnectionCreate?.(fromCardId, toCardId);
-          }
+          createThreadedConnection(fromCardId, toCardId);
           setDrawingLine(null);
           return;
         }
@@ -235,7 +428,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [drawingLine]);
+  }, [connections, createThreadedConnection, drawingLine, getSourceCardId]);
 
   const handleDragStart = (e: React.DragEvent, cardId: string) => {
     if (!isEditMode) return;
@@ -479,92 +672,119 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       return;
     }
 
-    if (connections.length === 0) return;
-
-    const COLUMN_ORDER = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change', 'story'];
-
-    // Build adjacency map and count incoming edges
-    const nextMap = new Map<string, string[]>();
-    const incomingCount = new Map<string, number>();
-    const connectedCardIds = new Set<string>();
-
-    for (const conn of connections) {
-      if (!nextMap.has(conn.from)) nextMap.set(conn.from, []);
-      nextMap.get(conn.from)!.push(conn.to);
-      incomingCount.set(conn.to, (incomingCount.get(conn.to) || 0) + 1);
-      connectedCardIds.add(conn.from);
-      connectedCardIds.add(conn.to);
+    const myConnections = getCurrentUserConnections();
+    if (myConnections.length === 0) {
+      showToast('Connect cards in your thread before assembling your story.');
+      return;
     }
 
-    // Find all root nodes (cards with no incoming connections)
-    const roots: string[] = [];
-    for (const cardId of connectedCardIds) {
-      if ((incomingCount.get(cardId) || 0) === 0) {
-        roots.push(cardId);
+    const buildStoriesForConnections = (ownerConnections: ConnectionData[]) => {
+      const nextMap = new Map<string, string[]>();
+      const incomingCount = new Map<string, number>();
+      const connectedCardIds = new Set<string>();
+
+      for (const conn of ownerConnections) {
+        if (!nextMap.has(conn.from)) nextMap.set(conn.from, []);
+        nextMap.get(conn.from)!.push(conn.to);
+        incomingCount.set(conn.to, (incomingCount.get(conn.to) || 0) + 1);
+        connectedCardIds.add(conn.from);
+        connectedCardIds.add(conn.to);
       }
-    }
 
-    // Fallback: if every card has an incoming edge (cycle), pick the leftmost
-    if (roots.length === 0 && connectedCardIds.size > 0) {
-      const sorted = Array.from(connectedCardIds).sort((a, b) => {
-        const cardA = cards.find(c => c.id === a);
-        const cardB = cards.find(c => c.id === b);
-        return COLUMN_ORDER.indexOf(cardA?.section || '') - COLUMN_ORDER.indexOf(cardB?.section || '');
-      });
-      roots.push(sorted[0]);
-    }
-
-    // DFS forward from each root to collect every reachable card
-    const visited = new Set<string>();
-    const collectedIds: string[] = [];
-
-    function visit(cardId: string) {
-      if (visited.has(cardId)) return;
-      visited.add(cardId);
-      collectedIds.push(cardId);
-      for (const nextId of nextMap.get(cardId) || []) {
-        visit(nextId);
+      const roots: string[] = [];
+      for (const cardId of connectedCardIds) {
+        if ((incomingCount.get(cardId) || 0) === 0) {
+          roots.push(cardId);
+        }
       }
-    }
 
-    for (const root of roots) {
-      visit(root);
-    }
+      if (roots.length === 0 && connectedCardIds.size > 0) {
+        const sorted = Array.from(connectedCardIds).sort((a, b) => {
+          const cardA = cards.find(c => c.id === a);
+          const cardB = cards.find(c => c.id === b);
+          return getColumnIndex(cardA?.section) - getColumnIndex(cardB?.section);
+        });
+        roots.push(sorted[0]);
+      }
 
-    // Ensure narrative order by sorting on column position
-    collectedIds.sort((a, b) => {
-      const cardA = cards.find(c => c.id === a);
-      const cardB = cards.find(c => c.id === b);
-      return COLUMN_ORDER.indexOf(cardA?.section || '') - COLUMN_ORDER.indexOf(cardB?.section || '');
-    });
+      const stories: Array<{ story: string; lastNodeId: string; sourceConnection: ConnectionData }> = [];
 
-    // Assemble each card's content as its own paragraph
-    const story = collectedIds
-      .map(id => cards.find(c => c.id === id)?.content)
-      .filter(Boolean)
-      .join('\n\n');
+      function visit(cardId: string, visited: Set<string>, collectedIds: string[]) {
+        if (visited.has(cardId)) return;
+        visited.add(cardId);
+        collectedIds.push(cardId);
+        const nextIds = [...(nextMap.get(cardId) || [])].sort((a, b) => {
+          const cardA = cards.find(c => c.id === a);
+          const cardB = cards.find(c => c.id === b);
+          return getColumnIndex(cardA?.section) - getColumnIndex(cardB?.section);
+        });
+        nextIds.forEach((nextId) => visit(nextId, visited, collectedIds));
+      }
 
-    if (!story.trim()) {
+      for (const root of roots) {
+        const visited = new Set<string>();
+        const collectedIds: string[] = [];
+        visit(root, visited, collectedIds);
+
+        collectedIds.sort((a, b) => {
+          const cardA = cards.find(c => c.id === a);
+          const cardB = cards.find(c => c.id === b);
+          return getColumnIndex(cardA?.section) - getColumnIndex(cardB?.section);
+        });
+
+        const sourceIds = collectedIds.filter((id) => cards.find(c => c.id === id)?.section !== 'story');
+        const story = sourceIds
+          .map(id => cards.find(c => c.id === id)?.content)
+          .filter(Boolean)
+          .join('\n\n');
+
+        if (!story.trim()) return;
+
+        const lastNodeId = sourceIds[sourceIds.length - 1] || collectedIds[collectedIds.length - 1];
+        const sourceConnection = ownerConnections.find((connection) => connection.from === lastNodeId)
+          || ownerConnections.find((connection) => connection.to === lastNodeId)
+          || ownerConnections[ownerConnections.length - 1];
+
+        stories.push({ story, lastNodeId, sourceConnection });
+      }
+
+      return stories;
+    };
+
+    const threadStories = buildStoriesForConnections(myConnections);
+
+    if (threadStories.length === 0) {
       showToast('No content to assemble. Connect cards with content first.');
       return;
     }
 
-    const lastNodeId = collectedIds[collectedIds.length - 1];
-
     if (onCardAdd) {
-      onCardAdd({ section: 'story', content: story, starred: false, order: 0 })
-        .then((generatedCardId) => {
-          if (generatedCardId && onConnectionCreate) {
-            onConnectionCreate(lastNodeId, generatedCardId);
-          }
-        })
-        .catch((error) => {
-          console.error('Error assembling story:', error);
-          showToast('Failed to create story card');
-        });
+      threadStories.forEach(({ story, lastNodeId, sourceConnection }, index) => {
+        onCardAdd({ section: 'story', content: story, starred: false, order: index })
+          .then((generatedCardId) => {
+            if (generatedCardId && onConnectionCreate) {
+              onConnectionCreate(
+                lastNodeId,
+                generatedCardId,
+                sourceConnection?.threadId,
+                sourceConnection?.color,
+                sourceConnection?.ownerUserId
+              );
+            }
+          })
+          .catch((error) => {
+            console.error('Error assembling story:', error);
+            showToast('Failed to create story card');
+          });
+      });
     } else {
-      const newCard: CardData = { id: `gen-story-${Date.now()}`, section: 'story', content: story, starred: false };
-      setCards([...cards, newCard]);
+      const newCards = threadStories.map(({ story }, index) => ({
+        id: `gen-story-${Date.now()}-${index}`,
+        section: 'story' as const,
+        content: story,
+        starred: false,
+      }));
+      setCards([...cards, ...newCards]);
     }
   };
 
@@ -607,7 +827,27 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     }
 
     onSelectCard(null);
+    setSelectedConnectionId(null);
   };
+
+  useEffect(() => {
+    if (!selectedConnectionId || !isEditMode) return;
+
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('textarea, input, [contenteditable="true"]')) return;
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId);
+      deleteConnections(selectedConnection ? getConnectionBreakCleanupIds(selectedConnection) : [selectedConnectionId]);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [connections, deleteConnections, getConnectionBreakCleanupIds, isEditMode, selectedConnectionId]);
 
   // Handle delete card with confirmation
   const handleDeleteCard = useCallback(async (cardId: string) => {
@@ -620,6 +860,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     if (!confirmed) return;
     
     try {
+      await deleteConnections(getCardDeleteCleanupConnectionIds(cardId));
       if (onCardDelete) {
         await onCardDelete(cardId);
       }
@@ -627,11 +868,12 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       console.error('Error deleting card:', error);
       showToast('Failed to delete card');
     }
-  }, [isEditMode, onCardDelete, showToast]);
+  }, [deleteConnections, getCardDeleteCleanupConnectionIds, isEditMode, onCardDelete, showToast]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedConnectionId) return;
       if (e.key === 'Delete' && selectedCard && isEditMode) {
         const activeEl = document.activeElement;
         const isEditingText = activeEl?.tagName === 'TEXTAREA' || activeEl?.tagName === 'INPUT';
@@ -643,7 +885,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCard, isEditMode, handleDeleteCard]);
+  }, [selectedCard, selectedConnectionId, isEditMode, handleDeleteCard]);
 
   const connectionRefreshKey = cards
     .map(card => `${card.id}:${card.section}:${card.order ?? ''}:${card.content?.length ?? 0}`)
@@ -667,14 +909,24 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         >
           <UserCursors users={activeUsers} currentUserId={currentUserId} />
           {/* Render established connections */}
-          {connections.map(conn => (
+          {connections
+            .filter((conn) => showOtherUsersConnections || isCurrentUserConnection(conn))
+            .map(conn => {
+              const isOwnConnection = isCurrentUserConnection(conn);
+              return (
             <ConnectionLine
               key={conn.id}
               startId={`node-right-${conn.from}`}
               endId={`node-left-${conn.to}`}
+              connectionId={conn.id}
+              color={conn.color || '#6366f1'}
+              isSelected={isOwnConnection && selectedConnectionId === conn.id}
+              onSelect={isOwnConnection ? setSelectedConnectionId : undefined}
+              interactive={isEditMode && isOwnConnection}
               refreshKey={`${connectionRefreshKey}:${editingCardId ?? ''}`}
             />
-          ))}
+              );
+            })}
           
           {/* Render currently drawn line */}
           {drawingLine && (
@@ -728,6 +980,10 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       onPointerDown={(e) => {
                         // Shift+drag on card body starts a card-to-card connection
                         if (!isEditMode || !e.shiftKey) return;
+                        if (!canStartConnectionFromCard(card.id)) {
+                          showToast('This column already has a selected card in your thread');
+                          return;
+                        }
                         // Don't intercept node or button clicks
                         const target = e.target as HTMLElement;
                         if (target.closest('[id^="node-"]') || target.closest('button') || target.closest('textarea')) {
@@ -735,7 +991,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         }
                         e.preventDefault();
                         setDrawingLine({
-                          startNodeId: `card-${card.id}`,
+                          startNodeId: `card-body-${card.id}`,
                           endX: e.clientX,
                           endY: e.clientY,
                           startX: e.clientX,
@@ -748,23 +1004,22 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         ${col.id === 'story' ? 'min-h-[240px] text-base p-6 flex items-center justify-center text-center rounded-3xl' : col.id === 'change' ? 'min-h-[180px] flex items-center justify-center text-center rounded-3xl' : 'min-h-[100px]'}
                         ${draggedCardId === card.id ? 'opacity-50 ring-2 ring-indigo-500 scale-105 shadow-2xl z-50' : ''}
                         ${dragOverCardId === card.id ? 'border-t-4 border-t-indigo-500 pt-6' : ''}
+                        ${isCardDimmedByThread(card.id) ? 'opacity-35 grayscale' : ''}
                       `}
                     >
                       {/* Left Node (Incoming) */}
                       <div
                         id={`node-left-${card.id}`}
-                        className="absolute left-0 top-1/2 z-10 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair group"
+                        className="absolute left-0 top-1/2 z-50 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair group"
                         title="Incoming connection (Double-click to break)" 
                         onPointerDown={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           if (drawingLine && isEditMode) {
                             const toCardId = card.id;
-                            const fromCardId = drawingLine.startNodeId.replace('node-right-', '');
-                            if (fromCardId !== toCardId) {
-                              if (!connections.some(c => c.from === fromCardId && c.to === toCardId)) {
-                                onConnectionCreate?.(fromCardId, toCardId);
-                              }
+                            const fromCardId = getSourceCardId(drawingLine.startNodeId);
+                            if (fromCardId && fromCardId !== toCardId) {
+                              createThreadedConnection(fromCardId, toCardId);
                             }
                             setDrawingLine(null);
                           }
@@ -780,26 +1035,36 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                           e.stopPropagation();
                           if (isEditMode) {
                             const incomingConns = connections.filter(c => c.to === card.id);
-                            incomingConns.forEach(conn => onConnectionDelete?.(conn.id));
+                            deleteConnections(incomingConns.flatMap(getConnectionBreakCleanupIds));
                           }
                         }}
                       >
-                        <div className="h-4 w-4 rounded-full border-[3px] border-gray-400 bg-white shadow-sm transition-transform duration-150 group-hover:border-indigo-500 group-hover:scale-125" />
+                        <div className="h-4 w-4 rounded-full border border-gray-400 bg-white shadow-sm transition-transform duration-150 group-hover:border-indigo-500 group-hover:scale-125" />
                       </div>
                       
                       {/* Right Node (Outgoing) */}
                       <div
                         id={`node-right-${card.id}`}
-                        className="absolute right-0 top-1/2 z-10 flex h-12 w-12 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair group"
+                        className="absolute right-0 top-1/2 z-50 flex h-12 w-12 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair group"
                         title="Outgoing connection (Double-click to break)"
                         onPointerDown={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           if (!isEditMode) return;
+                          if (!canStartConnectionFromCard(card.id)) {
+                            showToast('This column already has a selected card in your thread');
+                            return;
+                          }
                           if (drawingLine && drawingLine.startNodeId === `node-right-${card.id}`) {
                             setDrawingLine(null);
                           } else {
-                            setDrawingLine({ startNodeId: `node-right-${card.id}`, endX: e.clientX, endY: e.clientY, startX: e.clientX, startY: e.clientY });
+                            setDrawingLine({
+                              startNodeId: `node-right-${card.id}`,
+                              endX: e.clientX,
+                              endY: e.clientY,
+                              startX: e.clientX,
+                              startY: e.clientY,
+                            });
                           }
                         }}
                         onMouseDown={(e) => {
@@ -813,11 +1078,11 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                           e.stopPropagation();
                           if (isEditMode) {
                             const outgoingConns = connections.filter(c => c.from === card.id);
-                            outgoingConns.forEach(conn => onConnectionDelete?.(conn.id));
+                            deleteConnections(outgoingConns.flatMap(getConnectionBreakCleanupIds));
                           }
                         }}
                       >
-                        <div className="h-4 w-4 rounded-full border-[3px] border-gray-400 bg-white shadow-sm transition-transform duration-150 group-hover:border-indigo-500 group-hover:scale-125" />
+                        <div className="h-4 w-4 rounded-full border border-gray-400 bg-white shadow-sm transition-transform duration-150 group-hover:border-indigo-500 group-hover:scale-125" />
                       </div>
 
                       {!!card.starred && <Star size={14} className="absolute top-3 left-3 fill-gray-900 text-gray-900" />}
@@ -923,7 +1188,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                      </div>
                    ))}
                   
-                  {col.id !== 'change' && col.id !== 'story' && isEditMode && (
+                  {col.id !== 'story' && isEditMode && (
                     <button 
                       onClick={() => handleAddCard(col.id)}
                       className="mx-auto w-8 h-8 rounded-full bg-white border border-gray-300 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:border-gray-400 hover:bg-gray-50 transition-all mt-2 shadow-sm cursor-pointer"
@@ -951,6 +1216,24 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       )}
       
       {/* Floating Save/Download buttons */}
+      {connections.some((connection) => !isCurrentUserConnection(connection)) && (
+        <div className="absolute bottom-10 left-10 z-50 flex items-center gap-2 rounded-full border border-gray-200/70 bg-white/95 px-3 py-2 text-xs font-medium text-gray-700 shadow-lg backdrop-blur-sm">
+          <span>{showOtherUsersConnections ? "Hide Others' Threads" : "Show Others' Threads"}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showOtherUsersConnections}
+            onClick={() => setShowOtherUsersConnections((value) => !value)}
+            className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${showOtherUsersConnections ? 'bg-indigo-600' : 'bg-gray-300'}`}
+            title={showOtherUsersConnections ? "Hide Others' Threads" : "Show Others' Threads"}
+          >
+            <span
+              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] ${showOtherUsersConnections ? 'left-[18px]' : 'left-0.5'}`}
+            />
+          </button>
+        </div>
+      )}
+
       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-50">
         {connections.length > 0 && isEditMode && (
           <button
@@ -958,7 +1241,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
             className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-medium shadow-lg transition-all"
           >
             <FileText size={18} />
-            Assemble Story
+            Assemble My Story
           </button>
         )}
         <div className="flex items-center gap-3 bg-white/90 backdrop-blur-sm rounded-full shadow-xl border border-gray-200/50 p-3">
