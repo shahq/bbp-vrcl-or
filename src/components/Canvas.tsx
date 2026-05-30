@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Star, Plus, Download, Sparkles, Loader2, Trash2, FileText } from 'lucide-react';
+import { Star, Plus, Download, Sparkles, Loader2, Trash2 } from 'lucide-react';
 import { COLUMNS } from '../data';
 import { CardData, ConnectionData, Section } from '../types';
 import { apiUrl } from '../config/api';
@@ -50,6 +50,24 @@ interface ConnectionLineProps {
 }
 
 const COLUMN_ORDER: Section[] = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change', 'story'];
+
+const THREAD_LANES = [
+  { id: 'thread-red', label: 'Red', color: '#EF4444' },
+  { id: 'thread-purple', label: 'Purple', color: '#8B5CF6' },
+  { id: 'thread-blue', label: 'Blue', color: '#3B82F6' },
+  { id: 'thread-orange', label: 'Orange', color: '#F97316' },
+  { id: 'thread-yellow', label: 'Yellow', color: '#EAB308' },
+] as const;
+
+type ThreadLane = typeof THREAD_LANES[number];
+
+const THREAD_STORY_CARD_COLORS: Record<ThreadLane['id'], string> = {
+  'thread-red': 'bg-red-50 border-red-200',
+  'thread-purple': 'bg-purple-50 border-purple-200',
+  'thread-blue': 'bg-blue-50 border-blue-200',
+  'thread-orange': 'bg-orange-50 border-orange-200',
+  'thread-yellow': 'bg-yellow-50 border-yellow-200',
+};
 
 function getColumnIndex(section: Section | undefined) {
   return section ? COLUMN_ORDER.indexOf(section) : -1;
@@ -149,7 +167,7 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({
         d={path} 
         fill="none" 
         stroke={color} 
-        strokeWidth={isSelected ? 5 : 3} 
+        strokeWidth={isSelected ? 4 : 2} 
         strokeLinecap="round" 
         strokeDasharray={isDrawing ? "5,5" : "none"}
         className={connectionId ? 'cursor-pointer' : undefined}
@@ -167,16 +185,18 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({
   );
 }
 
-export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], currentUserId = '', currentUserColor = '#6366f1', activeTutorial, onCloseTutorial }: CanvasProps) {
+export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], currentUserId = '', activeTutorial, onCloseTutorial }: CanvasProps) {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
 
-  const [drawingLine, setDrawingLine] = useState<{ startNodeId: string, endX: number, endY: number, startX: number, startY: number } | null>(null);
+  const [drawingLine, setDrawingLine] = useState<{ startNodeId: string, lane: ThreadLane, side: 'left' | 'right', endX: number, endY: number, startX: number, startY: number } | null>(null);
 
   const [generatingCards, setGeneratingCards] = useState<Record<string, boolean>>({});
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  const [showOtherUsersConnections, setShowOtherUsersConnections] = useState(true);
+  const [activeThreadLane, setActiveThreadLane] = useState<ThreadLane>(THREAD_LANES[0]);
+  const [storyLaneOverrides, setStoryLaneOverrides] = useState<Record<string, ThreadLane['id']>>({});
+  const [pendingDeleteCardId, setPendingDeleteCardId] = useState<string | null>(null);
 
   
   // Track which card is being edited inline
@@ -192,39 +212,67 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
   const latestCursorPositionRef = useRef<{ clientX: number; clientY: number } | null>(null);
 
   const getSourceCardId = useCallback((startNodeId: string): string | null => {
+    for (const lane of THREAD_LANES) {
+      const rightPrefix = `node-right-${lane.id}-`;
+      const leftPrefix = `node-left-${lane.id}-`;
+      const bodyPrefix = `card-body-${lane.id}-`;
+      if (startNodeId.startsWith(rightPrefix)) {
+        return startNodeId.replace(rightPrefix, '');
+      }
+      if (startNodeId.startsWith(leftPrefix)) {
+        return startNodeId.replace(leftPrefix, '');
+      }
+      if (startNodeId.startsWith(bodyPrefix)) {
+        return startNodeId.replace(bodyPrefix, '');
+      }
+    }
     if (startNodeId.startsWith('node-right-')) {
       return startNodeId.replace('node-right-', '');
     }
-    if (startNodeId.startsWith('card-body-')) {
-      return startNodeId.replace('card-body-', '');
-    }
     return null;
   }, []);
+
+  const getLaneForConnection = useCallback((connection: ConnectionData): ThreadLane => {
+    return THREAD_LANES.find((lane) => connection.threadId === lane.id)
+      || THREAD_LANES.find((lane) => connection.color === lane.color)
+      || activeThreadLane;
+  }, [activeThreadLane]);
+
+  const getStoryCardLane = useCallback((cardId: string): ThreadLane | null => {
+    const overrideLane = THREAD_LANES.find((lane) => lane.id === storyLaneOverrides[cardId]);
+    if (overrideLane) return overrideLane;
+
+    const incomingStoryConnection = connections.find((connection) => connection.to === cardId);
+    return incomingStoryConnection ? getLaneForConnection(incomingStoryConnection) : null;
+  }, [connections, getLaneForConnection, storyLaneOverrides]);
 
   const getCardSection = useCallback((cardId: string) => (
     cards.find((card) => card.id === cardId)?.section
   ), [cards]);
 
-  const isCurrentUserConnection = useCallback((connection: ConnectionData) => {
-    if (currentUserId && connection.ownerUserId) {
-      return connection.ownerUserId === currentUserId;
-    }
-    if (currentUserColor && connection.color) {
-      return connection.color === currentUserColor;
-    }
-    return false;
-  }, [currentUserColor, currentUserId]);
+  const getThreadConnections = useCallback((lane: ThreadLane = activeThreadLane) => (
+    connections.filter((connection) => (
+      connection.threadId ? connection.threadId === lane.id : connection.color === lane.color
+    ))
+  ), [activeThreadLane, connections]);
 
-  const getCurrentUserConnections = useCallback(() => (
-    connections.filter(isCurrentUserConnection)
-  ), [connections, isCurrentUserConnection]);
+  const getActiveThreadConnections = useCallback(() => getThreadConnections(activeThreadLane), [activeThreadLane, getThreadConnections]);
 
-  const getCurrentUserThreadId = useCallback(() => {
-    return getCurrentUserConnections().find((connection) => connection.threadId)?.threadId
-      || (currentUserId ? `thread-${currentUserId}` : `thread-${currentUserColor.replace(/[^a-zA-Z0-9_-]/g, '')}`);
-  }, [currentUserColor, currentUserId, getCurrentUserConnections]);
+  const hasLaneIncomingConnection = useCallback((cardId: string, lane: ThreadLane) => (
+    getThreadConnections(lane).some((connection) => connection.to === cardId)
+  ), [getThreadConnections]);
 
-  const getDownstreamConnectionIds = useCallback((startCardId: string, sourceConnections = getCurrentUserConnections()) => {
+  const hasLaneOutgoingConnection = useCallback((cardId: string, lane: ThreadLane) => (
+    getThreadConnections(lane).some((connection) => connection.from === cardId)
+  ), [getThreadConnections]);
+
+  const canAssembleFromChangeCard = useCallback((cardId: string, lane: ThreadLane) => (
+    getCardSection(cardId) === 'change'
+    && hasLaneIncomingConnection(cardId, lane)
+    && !hasLaneOutgoingConnection(cardId, lane)
+  ), [getCardSection, hasLaneIncomingConnection, hasLaneOutgoingConnection]);
+
+  const getDownstreamConnectionIds = useCallback((startCardId: string, sourceConnections = getActiveThreadConnections()) => {
     const ids = new Set<string>();
     const visitedCards = new Set<string>();
 
@@ -242,7 +290,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
 
     walk(startCardId);
     return Array.from(ids);
-  }, [getCurrentUserConnections]);
+  }, [getActiveThreadConnections]);
 
   const getConnectionBreakCleanupIds = useCallback((connection: ConnectionData) => {
     return [connection.id, ...getDownstreamConnectionIds(connection.to)];
@@ -275,8 +323,8 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     }
   }, [onConnectionDelete, showToast]);
 
-  const ownedThreadConnections = getCurrentUserConnections();
-  const connectedCardIdsBySection = ownedThreadConnections.reduce((sections, connection) => {
+  const activeThreadConnections = getActiveThreadConnections();
+  const connectedCardIdsBySection = activeThreadConnections.reduce((sections, connection) => {
     [connection.from, connection.to].forEach((cardId) => {
       const section = getCardSection(cardId);
       if (!section) return;
@@ -286,31 +334,85 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     return sections;
   }, new Map<string, Set<string>>());
 
-  const canStartConnectionFromCard = useCallback((cardId: string) => {
+  const canStartConnectionFromCard = useCallback((cardId: string, lane: ThreadLane = activeThreadLane) => {
     const section = getCardSection(cardId);
     if (!section || isStorySection(section)) return true;
-    const connectedCardIds = connectedCardIdsBySection.get(section);
+    const sectionConnections = lane.id === activeThreadLane.id
+      ? connectedCardIdsBySection
+      : getThreadConnections(lane).reduce((sections, connection) => {
+        [connection.from, connection.to].forEach((connectedCardId) => {
+          const connectedSection = getCardSection(connectedCardId);
+          if (!connectedSection) return;
+          if (!sections.has(connectedSection)) sections.set(connectedSection, new Set<string>());
+          sections.get(connectedSection)!.add(connectedCardId);
+        });
+        return sections;
+      }, new Map<string, Set<string>>());
+    const connectedCardIds = sectionConnections.get(section);
     return !connectedCardIds || connectedCardIds.has(cardId);
-  }, [connectedCardIdsBySection, getCardSection]);
+  }, [activeThreadLane, connectedCardIdsBySection, getCardSection, getThreadConnections]);
 
-  const isCardDimmedByThread = useCallback((cardId: string) => {
-    const section = getCardSection(cardId);
-    if (!section || isStorySection(section)) return false;
-    const connectedCardIds = connectedCardIdsBySection.get(section);
-    return Boolean(connectedCardIds && !connectedCardIds.has(cardId));
-  }, [connectedCardIdsBySection, getCardSection]);
+  const getDrawingSourceCardId = useCallback(() => (
+    drawingLine ? getSourceCardId(drawingLine.startNodeId) : null
+  ), [drawingLine, getSourceCardId]);
 
-  const getConnectionThreadMeta = useCallback((fromCardId: string, toCardId: string) => {
+  const isSourcePort = useCallback((cardId: string, lane: ThreadLane, side: 'left' | 'right') => {
+    return Boolean(
+      drawingLine
+      && drawingLine.side === side
+      && drawingLine.lane.id === lane.id
+      && getDrawingSourceCardId() === cardId
+    );
+  }, [drawingLine, getDrawingSourceCardId]);
+
+  const isViableTargetPort = useCallback((cardId: string, lane: ThreadLane, side: 'left' | 'right') => {
+    if (!drawingLine || drawingLine.lane.id !== lane.id || drawingLine.side === side) return false;
+
+    const sourceCardId = getDrawingSourceCardId();
+    if (!sourceCardId || sourceCardId === cardId) return false;
+
+    const sourceSection = getCardSection(sourceCardId);
+    const targetSection = getCardSection(cardId);
+    const sourceColumnIndex = getColumnIndex(sourceSection);
+    const targetColumnIndex = getColumnIndex(targetSection);
+
+    return Math.abs(targetColumnIndex - sourceColumnIndex) === 1
+      && (drawingLine.side === 'right' ? targetColumnIndex > sourceColumnIndex : targetColumnIndex < sourceColumnIndex)
+      && canStartConnectionFromCard(cardId, lane);
+  }, [canStartConnectionFromCard, drawingLine, getCardSection, getDrawingSourceCardId]);
+
+  const getPortVisibilityClass = useCallback((cardId: string, lane: ThreadLane, side: 'left' | 'right') => {
+    if (isSourcePort(cardId, lane, side) || isViableTargetPort(cardId, lane, side)) {
+      return 'opacity-100 scale-110';
+    }
+
+    const hasIncoming = hasLaneIncomingConnection(cardId, lane);
+    const hasOutgoing = hasLaneOutgoingConnection(cardId, lane);
+    if (
+      (side === 'left' && (hasIncoming || hasOutgoing))
+      || (side === 'right' && (hasOutgoing || hasIncoming))
+    ) {
+      return 'opacity-100';
+    }
+
+    if (drawingLine) {
+      return 'opacity-0';
+    }
+    return 'opacity-25 group-hover:opacity-100';
+  }, [drawingLine, hasLaneIncomingConnection, hasLaneOutgoingConnection, isSourcePort, isViableTargetPort]);
+
+  const getConnectionThreadMeta = useCallback((lane: ThreadLane) => {
     return {
-      threadId: getCurrentUserThreadId(),
-      color: currentUserColor,
-      ownerUserId: currentUserId,
+      threadId: lane.id,
+      color: lane.color,
+      ownerUserId: undefined,
     };
-  }, [currentUserColor, currentUserId, getCurrentUserThreadId]);
+  }, []);
 
-  const createThreadedConnection = useCallback(async (fromCardId: string, toCardId: string) => {
-    if (getCurrentUserConnections().some((connection) => connection.from === fromCardId && connection.to === toCardId)) return;
-    const { threadId, color, ownerUserId } = getConnectionThreadMeta(fromCardId, toCardId);
+  const createThreadedConnection = useCallback(async (fromCardId: string, toCardId: string, lane: ThreadLane = activeThreadLane) => {
+    const laneConnections = getThreadConnections(lane);
+    if (laneConnections.some((connection) => connection.from === fromCardId && connection.to === toCardId)) return;
+    const { threadId, color, ownerUserId } = getConnectionThreadMeta(lane);
     const sourceSection = getCardSection(fromCardId);
     const targetSection = getCardSection(toCardId);
 
@@ -319,15 +421,17 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       return;
     }
 
-    const cleanupIds = new Set<string>();
-    const currentUserConnections = getCurrentUserConnections();
+    setActiveThreadLane(lane);
 
-    currentUserConnections
+    const cleanupIds = new Set<string>();
+    const activeLaneConnections = laneConnections;
+
+    activeLaneConnections
       .filter((connection) => connection.from === fromCardId || connection.to === toCardId)
       .forEach((connection) => getConnectionBreakCleanupIds(connection).forEach((id) => cleanupIds.add(id)));
 
     if (targetSection) {
-      currentUserConnections
+      activeLaneConnections
         .filter((connection) => {
           const fromSection = getCardSection(connection.from);
           const toSection = getCardSection(connection.to);
@@ -344,7 +448,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     }
 
     onConnectionCreate?.(fromCardId, toCardId, threadId, color, ownerUserId);
-  }, [connections, deleteConnections, getCardSection, getConnectionBreakCleanupIds, getConnectionThreadMeta, getCurrentUserConnections, onConnectionCreate, showToast]);
+  }, [activeThreadLane, deleteConnections, getCardSection, getConnectionBreakCleanupIds, getConnectionThreadMeta, getThreadConnections, onConnectionCreate, showToast]);
 
   const handlePanChange = useCallback((nextPan: { x: number; y: number }) => {
     panRef.current = nextPan;
@@ -376,12 +480,12 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       }
     };
 
-    const findTargetCardId = (el: Element | null): string | null => {
-      // Traverse up to find a node-left or data-card-id
+    const findTargetCardId = (el: Element | null, lane: ThreadLane, side: 'left' | 'right'): string | null => {
       let current: Element | null = el;
+      const laneNodeId = `node-${side}-${lane.id}-`;
       while (current) {
-        if (current.id && current.id.startsWith('node-left-')) {
-          return current.id.replace('node-left-', '');
+        if (current.id && current.id.startsWith(laneNodeId)) {
+          return current.id.replace(laneNodeId, '');
         }
         const cardId = current.getAttribute('data-card-id');
         if (cardId) {
@@ -402,10 +506,15 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         if (dummy) dummy.style.display = 'block';
 
         const fromCardId = getSourceCardId(drawingLine.startNodeId);
-        const toCardId = findTargetCardId(el);
+        const targetSide = drawingLine.side === 'right' ? 'left' : 'right';
+        const toCardId = findTargetCardId(el, drawingLine.lane, targetSide);
 
         if (fromCardId && toCardId && fromCardId !== toCardId) {
-          createThreadedConnection(fromCardId, toCardId);
+          if (drawingLine.side === 'right') {
+            createThreadedConnection(fromCardId, toCardId, drawingLine.lane);
+          } else {
+            createThreadedConnection(toCardId, fromCardId, drawingLine.lane);
+          }
           setDrawingLine(null);
           return;
         }
@@ -666,15 +775,15 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     }
   };
 
-  const handleAssembleStory = () => {
+  const handleAssembleStory = (lane: ThreadLane = activeThreadLane, terminalCardId?: string) => {
     if (!isEditMode) {
       showToast('Enter password to assemble stories');
       return;
     }
 
-    const myConnections = getCurrentUserConnections();
-    if (myConnections.length === 0) {
-      showToast('Connect cards in your thread before assembling your story.');
+    const laneConnections = getThreadConnections(lane);
+    if (laneConnections.length === 0) {
+      showToast(`Connect cards in the ${lane.label.toLowerCase()} thread before assembling a story.`);
       return;
     }
 
@@ -751,10 +860,11 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       return stories;
     };
 
-    const threadStories = buildStoriesForConnections(myConnections);
+    const threadStories = buildStoriesForConnections(laneConnections)
+      .filter(({ lastNodeId }) => !terminalCardId || lastNodeId === terminalCardId);
 
     if (threadStories.length === 0) {
-      showToast('No content to assemble. Connect cards with content first.');
+      showToast('Connect this change card to the selected thread before assembling a story.');
       return;
     }
 
@@ -763,11 +873,20 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         onCardAdd({ section: 'story', content: story, starred: false, order: index })
           .then((generatedCardId) => {
             if (generatedCardId && onConnectionCreate) {
+              const sourceLane = THREAD_LANES.find((threadLane) => (
+                sourceConnection?.threadId === threadLane.id || sourceConnection?.color === threadLane.color
+              )) || lane;
+
+              setStoryLaneOverrides((current) => ({
+                ...current,
+                [generatedCardId]: sourceLane.id,
+              }));
+
               onConnectionCreate(
                 lastNodeId,
                 generatedCardId,
-                sourceConnection?.threadId,
-                sourceConnection?.color,
+                sourceLane.id,
+                sourceLane.color,
                 sourceConnection?.ownerUserId
               );
             }
@@ -849,26 +968,31 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [connections, deleteConnections, getConnectionBreakCleanupIds, isEditMode, selectedConnectionId]);
 
-  // Handle delete card with confirmation
-  const handleDeleteCard = useCallback(async (cardId: string) => {
+  const deleteCardNow = useCallback(async (cardId: string) => {
     if (!isEditMode) {
       showToast('Enter password to delete cards');
       return;
     }
-    
-    const confirmed = window.confirm('Are you sure you want to delete this card?');
-    if (!confirmed) return;
-    
+
     try {
       await deleteConnections(getCardDeleteCleanupConnectionIds(cardId));
       if (onCardDelete) {
         await onCardDelete(cardId);
       }
+      setPendingDeleteCardId((current) => current === cardId ? null : current);
     } catch (error) {
       console.error('Error deleting card:', error);
       showToast('Failed to delete card');
     }
   }, [deleteConnections, getCardDeleteCleanupConnectionIds, isEditMode, onCardDelete, showToast]);
+
+  const requestDeleteCard = useCallback((cardId: string) => {
+    if (!isEditMode) {
+      showToast('Enter password to delete cards');
+      return;
+    }
+    setPendingDeleteCardId((current) => current === cardId ? null : cardId);
+  }, [isEditMode, showToast]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -878,14 +1002,14 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         const activeEl = document.activeElement;
         const isEditingText = activeEl?.tagName === 'TEXTAREA' || activeEl?.tagName === 'INPUT';
         if (!isEditingText) {
-          handleDeleteCard(selectedCard);
+          setPendingDeleteCardId(selectedCard);
         }
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCard, selectedConnectionId, isEditMode, handleDeleteCard]);
+  }, [selectedCard, selectedConnectionId, isEditMode]);
 
   const connectionRefreshKey = cards
     .map(card => `${card.id}:${card.section}:${card.order ?? ''}:${card.content?.length ?? 0}`)
@@ -910,19 +1034,21 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
           <UserCursors users={activeUsers} currentUserId={currentUserId} />
           {/* Render established connections */}
           {connections
-            .filter((conn) => showOtherUsersConnections || isCurrentUserConnection(conn))
             .map(conn => {
-              const isOwnConnection = isCurrentUserConnection(conn);
+              const lane = getLaneForConnection(conn);
               return (
             <ConnectionLine
               key={conn.id}
-              startId={`node-right-${conn.from}`}
-              endId={`node-left-${conn.to}`}
+              startId={`node-right-${lane.id}-${conn.from}`}
+              endId={`node-left-${lane.id}-${conn.to}`}
               connectionId={conn.id}
               color={conn.color || '#6366f1'}
-              isSelected={isOwnConnection && selectedConnectionId === conn.id}
-              onSelect={isOwnConnection ? setSelectedConnectionId : undefined}
-              interactive={isEditMode && isOwnConnection}
+              isSelected={selectedConnectionId === conn.id}
+              onSelect={(connectionId) => {
+                setActiveThreadLane(lane);
+                setSelectedConnectionId(connectionId);
+              }}
+              interactive={isEditMode}
               refreshKey={`${connectionRefreshKey}:${editingCardId ?? ''}`}
             />
               );
@@ -934,13 +1060,16 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
               startId={drawingLine.startNodeId}
               endId="cursor-dummy"
               isDrawing={true}
+              color={drawingLine.lane.color}
               refreshKey={`${drawingLine.endX}:${drawingLine.endY}`}
             />
           )}
 
-          <div className="mb-16 relative z-10" data-pan-target="true">
-            <h2 className="text-4xl font-bold mb-3 tracking-tight pointer-events-none">Act I</h2>
-            <p className="text-2xl text-gray-800 font-medium pointer-events-none">Set up the story from the audience's viewpoint</p>
+          <div className="mb-8 relative z-10" data-pan-target="true">
+            <h2 className="text-2xl font-bold mb-1.5 tracking-tight pointer-events-none">
+              Act I: {projectData.client || currentSession?.name || 'Project Name'}
+            </h2>
+            <p className="text-lg text-gray-800 font-medium pointer-events-none">Set up the story from the audience's viewpoint</p>
           </div>
 
           <div className="flex gap-8 items-start relative z-10" data-pan-target="true">
@@ -956,14 +1085,16 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: colIdx * 0.1 }}
                   key={col.id} 
-                  className={`${col.id === 'story' ? 'w-[340px]' : 'w-64'} shrink-0 flex flex-col gap-5 relative rounded-2xl transition-colors ${dragOverColId === col.id && !dragOverCardId ? 'bg-gray-50 ring-2 ring-gray-200 p-2 -m-2' : ''}`}
+                  className={`${col.id === 'story' ? 'w-[340px]' : 'w-64'} shrink-0 flex flex-col gap-3 relative rounded-2xl transition-colors ${dragOverColId === col.id && !dragOverCardId ? 'bg-gray-50 ring-2 ring-gray-200 p-2 -m-2' : ''}`}
                   onDragOver={(e) => handleDragOverCol(e, col.id)}
                   onDrop={(e) => handleDropOnCol(e, col.id)}
                   data-pan-target="true"
                 >
                   <h3 className="font-bold text-center mb-4 text-lg pointer-events-none">{col.title}</h3>
-                  {columnCards.map((card, cardIdx) => (
-                    <div
+                  {columnCards.map((card, cardIdx) => {
+                    const storyCardLane = card.section === 'story' ? getStoryCardLane(card.id) : null;
+                    return (
+                      <div
                       key={card.id}
                       id={`card-${card.id}`}
                       data-card-id={card.id}
@@ -980,8 +1111,8 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       onPointerDown={(e) => {
                         // Shift+drag on card body starts a card-to-card connection
                         if (!isEditMode || !e.shiftKey) return;
-                        if (!canStartConnectionFromCard(card.id)) {
-                          showToast('This column already has a selected card in your thread');
+                        if (!canStartConnectionFromCard(card.id, activeThreadLane)) {
+                          showToast(`This column already has a selected card in the ${activeThreadLane.label.toLowerCase()} thread`);
                           return;
                         }
                         // Don't intercept node or button clicks
@@ -991,7 +1122,9 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         }
                         e.preventDefault();
                         setDrawingLine({
-                          startNodeId: `card-body-${card.id}`,
+                          startNodeId: `card-body-${activeThreadLane.id}-${card.id}`,
+                          lane: activeThreadLane,
+                          side: 'right',
                           endX: e.clientX,
                           endY: e.clientY,
                           startX: e.clientX,
@@ -999,91 +1132,165 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         });
                       }}
                       className={`relative p-5 rounded-xl text-sm cursor-grab active:cursor-grabbing transition-all duration-200 group
-                        ${col.color}
+                        ${storyCardLane ? THREAD_STORY_CARD_COLORS[storyCardLane.id] : col.color}
                         ${selectedCard === card.id ? 'ring-2 ring-indigo-500 shadow-lg scale-[1.02]' : 'hover:shadow-md border border-black/5'}
-                        ${col.id === 'story' ? 'min-h-[240px] text-base p-6 flex items-center justify-center text-center rounded-3xl' : col.id === 'change' ? 'min-h-[180px] flex items-center justify-center text-center rounded-3xl' : 'min-h-[100px]'}
+                        ${col.id === 'story' ? 'min-h-[227px] text-base p-6 flex items-start justify-start text-left rounded-3xl' : col.id === 'change' ? 'min-h-[170px] flex items-start justify-start text-left rounded-3xl' : 'min-h-[170px]'}
                         ${draggedCardId === card.id ? 'opacity-50 ring-2 ring-indigo-500 scale-105 shadow-2xl z-50' : ''}
                         ${dragOverCardId === card.id ? 'border-t-4 border-t-indigo-500 pt-6' : ''}
-                        ${isCardDimmedByThread(card.id) ? 'opacity-35 grayscale' : ''}
                       `}
                     >
-                      {/* Left Node (Incoming) */}
-                      <div
-                        id={`node-left-${card.id}`}
-                        className="absolute left-0 top-1/2 z-50 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair group"
-                        title="Incoming connection (Double-click to break)" 
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (drawingLine && isEditMode) {
-                            const toCardId = card.id;
-                            const fromCardId = getSourceCardId(drawingLine.startNodeId);
-                            if (fromCardId && fromCardId !== toCardId) {
-                              createThreadedConnection(fromCardId, toCardId);
-                            }
-                            setDrawingLine(null);
-                          }
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                        }}
-                        onDragStart={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          if (isEditMode) {
-                            const incomingConns = connections.filter(c => c.to === card.id);
-                            deleteConnections(incomingConns.flatMap(getConnectionBreakCleanupIds));
-                          }
-                        }}
-                      >
-                        <div className="h-4 w-4 rounded-full border border-gray-400 bg-white shadow-sm transition-transform duration-150 group-hover:border-indigo-500 group-hover:scale-125" />
-                      </div>
-                      
-                      {/* Right Node (Outgoing) */}
-                      <div
-                        id={`node-right-${card.id}`}
-                        className="absolute right-0 top-1/2 z-50 flex h-12 w-12 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair group"
-                        title="Outgoing connection (Double-click to break)"
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (!isEditMode) return;
-                          if (!canStartConnectionFromCard(card.id)) {
-                            showToast('This column already has a selected card in your thread');
-                            return;
-                          }
-                          if (drawingLine && drawingLine.startNodeId === `node-right-${card.id}`) {
-                            setDrawingLine(null);
-                          } else {
-                            setDrawingLine({
-                              startNodeId: `node-right-${card.id}`,
-                              endX: e.clientX,
-                              endY: e.clientY,
-                              startX: e.clientX,
-                              startY: e.clientY,
-                            });
-                          }
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                        }}
-                        onDragStart={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          if (isEditMode) {
-                            const outgoingConns = connections.filter(c => c.from === card.id);
-                            deleteConnections(outgoingConns.flatMap(getConnectionBreakCleanupIds));
-                          }
-                        }}
-                      >
-                        <div className="h-4 w-4 rounded-full border border-gray-400 bg-white shadow-sm transition-transform duration-150 group-hover:border-indigo-500 group-hover:scale-125" />
-                      </div>
+                      {(storyCardLane ? [storyCardLane] : THREAD_LANES).map((lane) => (
+                        <React.Fragment key={lane.id}>
+                          <div
+                            id={`node-left-${lane.id}-${card.id}`}
+                            className={`absolute left-0 z-50 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair transition-all duration-150 ${
+                              col.id === 'place' ? 'opacity-0 pointer-events-none' : storyCardLane ? 'opacity-100' : getPortVisibilityClass(card.id, lane, 'left')
+                            }`}
+                            style={{ top: `${24 + THREAD_LANES.indexOf(lane) * 13}%` }}
+                            title={`${lane.label} incoming connection`}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (!isEditMode) return;
+                              setActiveThreadLane(lane);
+                              if (!canStartConnectionFromCard(card.id, lane)) {
+                                showToast(`This column already has a selected card in the ${lane.label.toLowerCase()} thread`);
+                                return;
+                              }
+                              if (drawingLine && drawingLine.lane.id === lane.id && drawingLine.side === 'right') {
+                                const toCardId = card.id;
+                                const fromCardId = getSourceCardId(drawingLine.startNodeId);
+                                if (fromCardId && fromCardId !== toCardId) {
+                                  createThreadedConnection(fromCardId, toCardId, lane);
+                                }
+                                setDrawingLine(null);
+                              } else {
+                                const startNodeId = `node-left-${lane.id}-${card.id}`;
+                                if (drawingLine && drawingLine.startNodeId === startNodeId) {
+                                  setDrawingLine(null);
+                                } else {
+                                  setDrawingLine({
+                                    startNodeId,
+                                    lane,
+                                    side: 'left',
+                                    endX: e.clientX,
+                                    endY: e.clientY,
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                  });
+                                }
+                              }
+                            }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                            }}
+                            onDragStart={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              if (isEditMode) {
+                                const incomingConns = connections.filter(c => c.to === card.id && getLaneForConnection(c).id === lane.id);
+                                deleteConnections(incomingConns.flatMap(getConnectionBreakCleanupIds));
+                              }
+                            }}
+                          >
+                            <div className={`${storyCardLane ? 'h-5 w-5 border-2 shadow-md' : 'h-3 w-3 border shadow-sm'} rounded-full border-white transition-all duration-150 ${
+                              isViableTargetPort(card.id, lane, 'left') ? 'ring-4 ring-black/15' : ''
+                            }`} style={{ backgroundColor: lane.color }} />
+                          </div>
+
+                          {col.id === 'change' ? (
+                            <button
+                              type="button"
+                              id={`node-right-${lane.id}-${card.id}`}
+                              className={`absolute right-0 z-50 flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent transition-all duration-150 ${
+                                canAssembleFromChangeCard(card.id, lane) || hasLaneOutgoingConnection(card.id, lane)
+                                  ? 'opacity-100 scale-110'
+                                  : 'pointer-events-none opacity-0'
+                              }`}
+                              style={{ top: `${24 + THREAD_LANES.indexOf(lane) * 13}%` }}
+                              title={hasLaneOutgoingConnection(card.id, lane) ? `${lane.label} story connected` : `Assemble ${lane.label} story`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!canAssembleFromChangeCard(card.id, lane)) return;
+                                setActiveThreadLane(lane);
+                                handleAssembleStory(lane, card.id);
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                if (isEditMode) {
+                                  const outgoingConns = connections.filter(c => c.from === card.id && getLaneForConnection(c).id === lane.id);
+                                  deleteConnections(outgoingConns.flatMap(getConnectionBreakCleanupIds));
+                                }
+                              }}
+                            >
+                              <span
+                                className={`flex items-center justify-center rounded-full border-white font-bold leading-none text-white transition-all duration-150 ${
+                                  canAssembleFromChangeCard(card.id, lane)
+                                    ? 'h-5 w-5 border-2 text-[13px] shadow-md'
+                                    : 'h-3 w-3 border text-[0px] shadow-sm'
+                                }`}
+                                style={{ backgroundColor: lane.color }}
+                              >
+                                {canAssembleFromChangeCard(card.id, lane) ? '+' : ''}
+                              </span>
+                            </button>
+                          ) : (
+                            <div
+                              id={`node-right-${lane.id}-${card.id}`}
+                              className={`absolute right-0 z-50 flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair transition-all duration-150 ${
+                                col.id === 'story' ? 'opacity-0 pointer-events-none' : getPortVisibilityClass(card.id, lane, 'right')
+                              }`}
+                              style={{ top: `${24 + THREAD_LANES.indexOf(lane) * 13}%` }}
+                              title={`${lane.label} outgoing connection`}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (!isEditMode) return;
+                                setActiveThreadLane(lane);
+                                if (!canStartConnectionFromCard(card.id, lane)) {
+                                  showToast(`This column already has a selected card in the ${lane.label.toLowerCase()} thread`);
+                                  return;
+                                }
+                                const startNodeId = `node-right-${lane.id}-${card.id}`;
+                                if (drawingLine && drawingLine.startNodeId === startNodeId) {
+                                  setDrawingLine(null);
+                                } else {
+                                  setDrawingLine({
+                                    startNodeId,
+                                    lane,
+                                    side: 'right',
+                                    endX: e.clientX,
+                                    endY: e.clientY,
+                                    startX: e.clientX,
+                                    startY: e.clientY,
+                                  });
+                                }
+                              }}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onDragStart={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                if (isEditMode) {
+                                  const outgoingConns = connections.filter(c => c.from === card.id && getLaneForConnection(c).id === lane.id);
+                                  deleteConnections(outgoingConns.flatMap(getConnectionBreakCleanupIds));
+                                }
+                              }}
+                            >
+                              <div className={`h-3 w-3 rounded-full border border-white shadow-sm transition-all duration-150 ${
+                                isSourcePort(card.id, lane, 'right') ? 'ring-4 ring-black/15' : ''
+                              }`} style={{ backgroundColor: lane.color }} />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      ))}
 
                       {!!card.starred && <Star size={14} className="absolute top-3 left-3 fill-gray-900 text-gray-900" />}
                       
@@ -1091,13 +1298,39 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteCard(card.id);
+                          requestDeleteCard(card.id);
                         }}
                         className="absolute bottom-2 right-2 p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all opacity-0 group-hover:opacity-100"
                         title="Delete card"
                       >
                         <Trash2 size={14} />
                       </button>
+                      {pendingDeleteCardId === card.id && (
+                        <div
+                          className="absolute bottom-9 right-2 z-[70] w-44 rounded-xl border border-red-100 bg-white p-2 shadow-xl"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="mb-2 text-xs font-medium leading-snug text-gray-700">
+                            Delete this card?
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteCardId(null)}
+                              className="flex-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteCardNow(card.id)}
+                              className="flex-1 rounded-lg bg-red-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       
                       {/* Card Number */}
                       <div className="absolute top-2 right-2 text-xs text-gray-400 font-mono">
@@ -1186,7 +1419,8 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         </div>
                       )}
                      </div>
-                   ))}
+                    );
+                  })}
                   
                   {col.id !== 'story' && isEditMode && (
                     <button 
@@ -1215,35 +1449,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         <div id="cursor-dummy" style={{ position: 'fixed', left: drawingLine.endX, top: drawingLine.endY, width: 1, height: 1, pointerEvents: 'none', zIndex: 9999 }} />
       )}
       
-      {/* Floating Save/Download buttons */}
-      {connections.some((connection) => !isCurrentUserConnection(connection)) && (
-        <div className="absolute bottom-10 left-10 z-50 flex items-center gap-2 rounded-full border border-gray-200/70 bg-white/95 px-3 py-2 text-xs font-medium text-gray-700 shadow-lg backdrop-blur-sm">
-          <span>{showOtherUsersConnections ? "Hide Others' Threads" : "Show Others' Threads"}</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={showOtherUsersConnections}
-            onClick={() => setShowOtherUsersConnections((value) => !value)}
-            className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${showOtherUsersConnections ? 'bg-indigo-600' : 'bg-gray-300'}`}
-            title={showOtherUsersConnections ? "Hide Others' Threads" : "Show Others' Threads"}
-          >
-            <span
-              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] ${showOtherUsersConnections ? 'left-[18px]' : 'left-0.5'}`}
-            />
-          </button>
-        </div>
-      )}
-
       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-50">
-        {connections.length > 0 && isEditMode && (
-          <button
-            onClick={handleAssembleStory}
-            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-medium shadow-lg transition-all"
-          >
-            <FileText size={18} />
-            Assemble My Story
-          </button>
-        )}
         <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm rounded-full shadow-xl border border-gray-200/50 px-3 py-2">
           <button 
             className="flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900"

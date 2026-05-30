@@ -1577,7 +1577,7 @@ function SessionView() {
           to,
           threadId,
           color: color || userProfile?.color || partyUserColor,
-          ownerUserId: ownerUserId || userProfile?.id || partyUserId,
+          ownerUserId,
         }))
       });
       if (response.ok) {
