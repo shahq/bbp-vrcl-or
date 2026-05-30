@@ -22,6 +22,7 @@ import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
 import { apiUrl } from './config/api';
+import { useConfirmDialog } from './components/ConfirmDialog';
 
 // Session types
 interface Session {
@@ -99,6 +100,7 @@ function AppRoutes() {
 // Admin Dashboard Component
 function Dashboard() {
   const { adminSessionId, logout, handleExpiredAdminSession } = useAuth();
+  const { confirm, dialog } = useConfirmDialog();
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [newSessionInfo, setNewSessionInfo] = useState<{id: string, name: string, password: string | null} | null>(null);
@@ -184,7 +186,13 @@ function Dashboard() {
   };
 
   const deleteSession = async (sessionId: string) => {
-    if (!confirm('Are you sure you want to delete this session?')) return;
+    const confirmed = await confirm({
+      title: 'Delete session?',
+      message: 'This will permanently delete the session, its cards, connections, notes, and uploaded metadata.',
+      confirmLabel: 'Delete session',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
@@ -207,6 +215,7 @@ function Dashboard() {
 
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden">
+      {dialog}
       <Sidebar 
         onViewChange={() => {}} 
         currentView="new" 
@@ -406,6 +415,7 @@ function Dashboard() {
 function SessionView() {
   const { isAdminVerified, adminSessionId, handleExpiredAdminSession } = useAuth();
   const { sessionId } = useParams<{ sessionId: string }>();
+  const { confirm, dialog } = useConfirmDialog();
 
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [cards, setCards] = useState<CardData[]>([]);
@@ -1042,7 +1052,12 @@ function SessionView() {
   const handleRegenerateCards = async (backgroundOverride?: string) => {
     if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
-    const confirmed = window.confirm('Doing this will delete your existing cards, are you sure?');
+    const confirmed = await confirm({
+      title: 'Regenerate cards?',
+      message: 'This will delete the existing canvas cards and connections before creating a new generated set from the current brief.',
+      confirmLabel: 'Regenerate cards',
+      tone: 'warning',
+    });
     if (!confirmed) return;
 
     setIsRegeneratingCards(true);
@@ -1181,7 +1196,12 @@ function SessionView() {
       return;
     }
 
-    const confirmed = window.confirm('Importing this ZIP will replace the current session brief, cards, connections, notes, and attachment metadata. Continue?');
+    const confirmed = await confirm({
+      title: 'Replace this session?',
+      message: 'Importing this ZIP will replace the current brief, cards, connections, notes, and attachment metadata.',
+      confirmLabel: 'Replace session',
+      tone: 'danger',
+    });
     if (!confirmed) return;
 
     setIsUploadingAttachments(true);
@@ -1665,6 +1685,7 @@ function SessionView() {
 
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden antialiased">
+      {dialog}
       <UserProfilePrompt
         isOpen={showProfilePrompt}
         onSubmit={handleProfileSubmit}

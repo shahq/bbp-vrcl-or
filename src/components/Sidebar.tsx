@@ -95,7 +95,7 @@ export default function Sidebar({
 
   const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    if (onDeleteSession && confirm('Are you sure you want to delete this session?')) {
+    if (onDeleteSession) {
       await onDeleteSession(sessionId);
     }
   };
