@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { UploadCloud, Save, Loader2, FileText, Image as ImageIcon, Pencil, Trash2, ChevronDown, ChevronRight, CheckCircle2, AlertTriangle, CircleDashed, Sparkles, Download } from 'lucide-react';
 import type { ProjectAttachment } from '../types';
 import { apiUrl } from '../config/api';
@@ -67,6 +67,11 @@ export default function NewProject({
   const [attachmentNameDrafts, setAttachmentNameDrafts] = useState<Record<string, string>>({});
   const [attachmentNoteDrafts, setAttachmentNoteDrafts] = useState<Record<string, string>>({});
   const [savingAttachmentNoteId, setSavingAttachmentNoteId] = useState<string | null>(null);
+  const [savedBackground, setSavedBackground] = useState(projectData.background);
+
+  useEffect(() => {
+    setSavedBackground(projectData.background);
+  }, [sessionId]);
 
   const sortedAttachments = useMemo(() => attachments, [attachments]);
   const hasUsableUploads = sortedAttachments.some((attachment) =>
@@ -146,9 +151,39 @@ export default function NewProject({
     window.open(apiUrl(`/api/sessions/${sessionId}/export/overview-docx`), '_blank');
   };
 
+  const isDirty = projectData.background !== savedBackground;
+  const canExport = projectData.background.trim().length > 0;
+
+  const handleSaveOverview = async () => {
+    await onSaveChanges();
+    setSavedBackground(projectData.background);
+  };
+
   return (
     <div className="h-full flex-1 overflow-auto">
-      <div className="max-w-6xl mx-auto p-12">
+      <div className="max-w-6xl mx-auto p-8">
+      {canManageAttachments && (
+        <div className="flex justify-end mb-4">
+          <input
+            ref={sessionArchiveInputRef}
+            type="file"
+            className="hidden"
+            accept=".zip,application/zip,application/x-zip-compressed"
+            onChange={(e) => {
+              onUploadSessionArchive(e.target.files?.[0] || null);
+              e.target.value = '';
+            }}
+          />
+          <button
+            disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads}
+            onClick={() => sessionArchiveInputRef.current?.click()}
+            className="flex items-center gap-1.5 text-sm text-[#2E94FB] hover:text-blue-700 transition-colors disabled:opacity-50 disabled:cursor-default border-l border-gray-300 pl-3"
+          >
+            <UploadCloud size={16} className="text-black" />
+            Upload Session
+          </button>
+        </div>
+      )}
       <div className="mb-14">
         {isEditingProjectName ? (
           <div className="flex items-center gap-3">
@@ -199,44 +234,12 @@ export default function NewProject({
             accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
             onChange={(e) => onUploadFiles(e.target.files)}
           />
-          <input
-            ref={sessionArchiveInputRef}
-            type="file"
-            className="hidden"
-            accept=".zip,application/zip,application/x-zip-compressed"
-            onChange={(e) => {
-              onUploadSessionArchive(e.target.files?.[0] || null);
-              e.target.value = '';
-            }}
-          />
         <button
           disabled={isGenerating || isUploadingAttachments}
           onClick={() => fileInputRef.current?.click()}
           className="w-full flex items-center justify-center gap-3 px-6 py-4 border border-gray-300 rounded-none bg-gray-50 hover:bg-gray-100 font-semibold text-base transition-colors disabled:opacity-50"
         >
           Upload Docs <UploadCloud size={22} />
-        </button>
-        <button
-          disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads}
-          onClick={() => sessionArchiveInputRef.current?.click()}
-          className="mt-3 w-full flex items-center justify-center gap-3 px-6 py-4 border border-gray-300 rounded-none bg-white hover:bg-gray-50 font-semibold text-base transition-colors disabled:opacity-50"
-        >
-          Upload Session <UploadCloud size={22} />
-        </button>
-        <button
-          disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads || !hasUsableUploads}
-          onClick={onGenerateBriefFromUploads}
-          className="mt-3 w-full flex items-center justify-center gap-3 px-6 py-4 border border-black rounded-none bg-black text-white hover:bg-gray-900 font-semibold text-base transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isGeneratingBriefFromUploads ? (
-            <>
-              Generating brief <Loader2 size={20} className="animate-spin" />
-            </>
-          ) : (
-            <>
-              Generate brief from uploads <Sparkles size={20} />
-            </>
-          )}
         </button>
         </div>
         <div className="self-stretch w-px bg-gray-300" />
@@ -245,7 +248,7 @@ export default function NewProject({
           <div className="space-y-2">
             {sortedAttachments.length === 0 ? (
               <div className="text-gray-500 text-sm py-3">
-                No documents yet. Upload PDFs, Word docs, spreadsheets, markdown, text files, or images.
+                Upload your brief, RFP proposal, or any other project background document
               </div>
             ) : (
               sortedAttachments.map((attachment) => {
@@ -362,7 +365,8 @@ export default function NewProject({
                             Saving source note
                           </div>
                         )}
-                        <div className="flex flex-wrap gap-2">
+                        {/* Dormant — per-upload insert buttons hidden but preserved */}
+                        <div className="flex flex-wrap gap-2 hidden">
                           <button
                             onClick={() => onUseAttachmentText(attachment, 'background', 'summary')}
                             className="px-3 py-1.5 rounded-md bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100"
@@ -399,6 +403,23 @@ export default function NewProject({
               })
             )}
           </div>
+          {hasUsableUploads && (
+            <button
+              disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads}
+              onClick={onGenerateBriefFromUploads}
+              className="mt-4 inline-flex items-center justify-center gap-3 px-6 py-3 border border-black bg-black text-white hover:bg-gray-900 font-semibold text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isGeneratingBriefFromUploads ? (
+                <>
+                  Generating overview <Loader2 size={18} className="animate-spin" />
+                </>
+              ) : (
+                <>
+                  Generate Project Overview <Sparkles size={18} />
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -411,42 +432,53 @@ export default function NewProject({
       )}
 
       <div className="mb-10">
-        <label className="block text-[1.75rem] font-bold mb-5">Project Overview</label>
-        <textarea 
+        <div className="flex items-center justify-between mb-5">
+          <label className="text-[1.75rem] font-bold">Project Overview</label>
+          <div className="flex items-center gap-3 text-sm">
+            <button
+              onClick={handleSaveOverview}
+              disabled={!isDirty || isGenerating || isSavingProjectChanges || isRegeneratingCards}
+              className={`flex items-center gap-1.5 transition-colors ${
+                isDirty
+                  ? 'text-[#2E94FB] hover:text-blue-700'
+                  : 'text-gray-400 opacity-50 cursor-default'
+              }`}
+            >
+              <Save size={16} className={isDirty ? 'text-black' : 'text-gray-400'} />
+              Save Changes
+            </button>
+            <span className="text-gray-300">|</span>
+            <button
+              onClick={handleDownloadOverviewDoc}
+              disabled={!canExport || isGenerating || isSavingProjectChanges || isRegeneratingCards}
+              className={`flex items-center gap-1.5 transition-colors ${
+                canExport
+                  ? 'text-[#2E94FB] hover:text-blue-700'
+                  : 'text-gray-400 opacity-50 cursor-default'
+              }`}
+            >
+              <FileText size={16} className={canExport ? 'text-black' : 'text-gray-400'} />
+              Export as: Word Doc
+            </button>
+          </div>
+        </div>
+        <textarea
           value={projectData.background}
           onChange={(e) => setProjectData(p => ({ ...p, background: e.target.value }))}
           className="w-full min-h-[420px] border border-gray-300 rounded-none p-8 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base leading-relaxed disabled:opacity-50"
           placeholder={`No brief? please describe the project here with as much detail as possible\n\nOR\n\nUse the AI assistant on the right to help write a Project Overview`}
           disabled={isGenerating}
         ></textarea>
-        <button
-          onClick={onSaveChanges}
-          disabled={isGenerating || isSavingProjectChanges || isRegeneratingCards}
-          className="w-full mt-6 py-4 bg-white text-gray-900 hover:bg-gray-50 border border-gray-300 rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
-        >
-          {isSavingProjectChanges ? (
-            <>Saving changes <Loader2 size={20} className="animate-spin" /></>
-          ) : (
-            <>Save changes <Save size={20} /></>
-          )}
-        </button>
-        <button
-          onClick={handleDownloadOverviewDoc}
-          disabled={isGenerating || isSavingProjectChanges || isRegeneratingCards}
-          className="w-full mt-3 py-4 bg-white text-gray-900 hover:bg-gray-50 border border-gray-300 rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
-        >
-          Download Overview as Doc <Download size={20} />
-        </button>
         {showGenerateCanvasButton && (
           <button
             onClick={onStart}
             disabled={isGenerating || isSavingProjectChanges || isRegeneratingCards}
-            className="w-full mt-3 py-4 bg-black text-white hover:bg-gray-900 border border-black rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
+            className="w-full mt-6 py-4 bg-black text-white hover:bg-gray-900 border border-black rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
           >
             {isGenerating ? (
               <>Generating Act I Ideas <Loader2 size={20} className="animate-spin" /></>
             ) : (
-              <>Save & Generate Canvas <Save size={20} /></>
+              <>Generate Canvas</>
             )}
           </button>
         )}
@@ -454,12 +486,12 @@ export default function NewProject({
           <button
             onClick={() => onRegenerateCards()}
             disabled={isGenerating || isSavingProjectChanges || isRegeneratingCards}
-            className="w-full mt-3 py-4 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
+            className="w-full mt-6 py-4 bg-black text-white hover:bg-gray-900 border border-black rounded-none font-bold flex items-center justify-center gap-3 text-lg transition-colors disabled:opacity-70"
           >
             {isRegeneratingCards ? (
               <>Regenerating cards <Loader2 size={20} className="animate-spin" /></>
             ) : (
-              <>Save changes and regenerate cards <Save size={20} /></>
+              <>Generate Canvas</>
             )}
           </button>
         )}

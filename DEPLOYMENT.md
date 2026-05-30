@@ -794,9 +794,11 @@ For the current hybrid alpha architecture, keep the backend outside Firebase Hos
 
 Deploy flow:
 ```bash
-npm run build
-firebase deploy --only hosting
+npm run build:staging
+firebase deploy --only hosting --project sqd-bbp
 ```
+
+The staging build uses `.env.staging` so Firebase Hosting calls the Cloud Run backend instead of trying `/api/*` on Firebase Hosting. Do not set `VITE_API_BASE_URL` in `.env.local` for normal local development.
 
 Handoff notes:
 

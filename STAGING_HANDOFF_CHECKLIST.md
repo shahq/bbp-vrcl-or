@@ -30,6 +30,25 @@ PARTYKIT_HOST=beyond-bullet-points.the-shaper.partykit.dev
 CORS_ALLOWED_ORIGINS=https://sqd-bbp.web.app,https://sqd-bbp.firebaseapp.com
 ```
 
+## Staging frontend build settings
+
+Firebase Hosting staging should be built with:
+
+```bash
+npm run build:staging
+firebase deploy --only hosting --project sqd-bbp
+```
+
+The staging build reads `.env.staging`, which should contain only browser-safe `VITE_*` variables:
+
+```bash
+VITE_API_BASE_URL=https://bbp-backend-staging-471025386718.us-central1.run.app
+VITE_PARTYKIT_HOST=beyond-bullet-points.the-shaper.partykit.dev
+VITE_PARTYKIT_PARTY=main
+```
+
+For local development, use `npm run dev` and leave `VITE_API_BASE_URL`, `NODE_ENV`, and `PORT` unset in `.env.local`.
+
 Backend also requires:
 
 ```bash

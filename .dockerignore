@@ -2,8 +2,8 @@ node_modules
 dist
 .git
 .gitignore
-.env
-.env.local
+.env*
+!.env.example
 .firebase
 firebase-debug.log
 data

@@ -127,6 +127,8 @@ Start the Express/Vite app:
 npm run dev
 ```
 
+Local development defaults to `http://localhost:3000` and should not set `NODE_ENV`, `PORT`, or `VITE_API_BASE_URL` in `.env.local`. With `VITE_API_BASE_URL` unset, the browser calls the same-origin local Express backend.
+
 ### Cloud Run Backend
 
 The backend is now containerized for Cloud Run in [Dockerfile](/Users/HAND/Documents/a/work/2026/sqd/sqd-bbp/Dockerfile).
@@ -191,9 +193,11 @@ For the current hybrid deployment shape:
 Typical deploy flow:
 
 ```bash
-npm run build
-firebase deploy --only hosting
+npm run build:staging
+firebase deploy --only hosting --project sqd-bbp
 ```
+
+`npm run build:staging` loads `.env.staging` and bakes the Cloud Run backend URL into the browser bundle. Use plain `npm run build` only for same-origin Express serving or a production mode with its own `.env.production`.
 
 ## Firestore Setup
 
@@ -255,6 +259,11 @@ The server exposes endpoints for:
 - Importing exported session ZIPs into the current session as a replace-current-session restore
 
 ## Recent Changes
+
+### UI Cleanup (2026-05-27)
+- **Overview page layout:** The right chat panel now uses `33vw` so the main brief content gets the remaining ~67% of the viewport width. The "Hero:" / "Challenge:" header block is removed from the overview right panel.
+- **Top-bar site brand:** A `SQD + BDO` mark with a vertical divider is now fixed at the left end of the top bar.
+- **Dormant per-upload insert buttons:** The "Add summary to overview", "Add full text to overview", "Add summary to notes", and "Add full text to notes" buttons in the Project Overview document uploads section are hidden from the UI. The underlying `onUseAttachmentText` handlers and markup remain intact for future re-activation.
 
 ### Shared Notepad and Exportable Notes (2026-05-19)
 - **Canvas notepad:** The right-panel **Notepad** tab is now a real shared note block instead of a placeholder. Admins and guests with edit access can update it; read-only users can view it.

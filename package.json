@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "build:staging": "vite build --mode staging",
+    "deploy:hosting:staging": "npm run build:staging && firebase deploy --only hosting --project sqd-bbp",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",

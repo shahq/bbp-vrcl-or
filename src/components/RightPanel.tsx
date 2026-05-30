@@ -149,6 +149,7 @@ export default function RightPanel({
   };
 
   const isSavingBrief = briefAction !== null;
+  const hasBriefChanges = briefDraft !== (projectData.background || '');
 
   const openExport = (format: 'markdown' | 'pdf' | 'overview-docx') => {
     if (!currentSession?.id) return;
@@ -171,12 +172,7 @@ export default function RightPanel({
 
   if (currentView === 'new') {
     return (
-      <div className="w-96 bg-white border-l border-gray-200 flex flex-col shrink-0 h-full">
-        <div className="p-8 border-b border-gray-200 shrink-0">
-          <div className="text-base text-gray-500 mb-2">Hero: <span className="font-bold text-gray-900">{projectData.client || 'Client Name'}</span></div>
-          <div className="text-base text-gray-500">Challenge <span className="font-bold text-gray-900">Description of challenge, brief</span></div>
-        </div>
-        
+      <div className="w-[33vw] bg-white border-l border-gray-200 flex flex-col shrink-0 h-full">
         <div className="flex-1 overflow-hidden">
           <ChatPanel
             context={{
@@ -231,7 +227,7 @@ export default function RightPanel({
             <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar pb-2">
               <div className="px-6 pr-8">
               {isEditingBrief ? (
-                <div className="space-y-3">
+                <div className="space-y-1.5">
                   <textarea
                     className="min-h-40 w-full resize-none rounded-lg border border-gray-300 p-3 text-sm leading-relaxed text-gray-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-gray-50"
                     value={briefDraft}
@@ -239,12 +235,12 @@ export default function RightPanel({
                     disabled={isSavingBrief}
                     aria-label="Project overview text"
                   />
-                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex flex-wrap items-center justify-start gap-2">
                     <button
                       type="button"
                       onClick={cancelBriefEdit}
                       disabled={isSavingBrief}
-                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-gray-600 transition-colors hover:bg-gray-50 disabled:opacity-60"
+                      className="border border-gray-300 bg-white px-2.5 py-1 text-xs font-normal text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60"
                     >
                       Cancel
                     </button>
@@ -253,16 +249,16 @@ export default function RightPanel({
                         type="button"
                         onClick={saveAndRegenerateBriefEdit}
                         disabled={isSavingBrief}
-                        className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-60"
+                        className="border border-gray-300 bg-gray-100 px-2.5 py-1 text-xs font-normal text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-60"
                       >
-                        {briefAction === 'regenerate' ? 'Regenerating...' : 'Save & regenerate cards'}
+                        {briefAction === 'regenerate' ? 'Regenerating...' : 'Regenerate cards'}
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={saveBriefEdit}
-                      disabled={isSavingBrief}
-                      className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white transition-colors hover:bg-gray-800 disabled:opacity-60"
+                      disabled={isSavingBrief || !hasBriefChanges}
+                      className="border border-gray-400 bg-gray-800 px-2.5 py-1 text-xs font-normal text-white transition-colors hover:bg-gray-700 disabled:opacity-40"
                     >
                       {briefAction === 'save' ? 'Saving...' : 'Save'}
                     </button>

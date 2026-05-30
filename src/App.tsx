@@ -1718,6 +1718,8 @@ function SessionView() {
       <div className="flex flex-col flex-1 min-w-0">
         <TopBar 
           projectName={currentSession.name}
+          showTitle={false}
+          showTimer={!showBriefWorkspace}
           onTutorialSelect={setActiveTutorial}
         rightContent={
             <div className="flex items-center gap-2">
