@@ -1,0 +1,12 @@
+{
+  "allowed_fields": [
+    "audience",
+    "perception",
+    "differentiation_signals",
+    "story_tool_payload"
+  ],
+  "forbidden_fields": [
+    "raw_chat_log",
+    "unstructured_text"
+  ]
+}
