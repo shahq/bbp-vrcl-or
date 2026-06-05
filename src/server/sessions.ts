@@ -5,6 +5,7 @@
 
 import bcrypt from 'bcryptjs';
 import db from './db';
+import { DEFAULT_TIMER_CONTROL_MODE, normalizeTimerControlMode, type TimerControlMode } from '../config/timer';
 
 const SALT_ROUNDS = 10;
 
@@ -39,6 +40,7 @@ export interface Session {
   project_notes?: string;
   onboarding_completed: boolean;
   is_archived: boolean;
+  timer_control_mode: TimerControlMode;
 }
 
 export interface CreateSessionOptions {
@@ -46,6 +48,7 @@ export interface CreateSessionOptions {
   projectClient?: string;
   projectBackground?: string;
   projectNotes?: string;
+  timerControlMode?: TimerControlMode;
 }
 
 export interface CreateSessionResult {
@@ -58,7 +61,13 @@ export function createSession(
   name: string,
   options: CreateSessionOptions
 ): CreateSessionResult {
-  const { requirePassword, projectClient = '', projectBackground = '', projectNotes = '' } = options;
+  const {
+    requirePassword,
+    projectClient = '',
+    projectBackground = '',
+    projectNotes = '',
+    timerControlMode = DEFAULT_TIMER_CONTROL_MODE,
+  } = options;
   
   let password: string | null = null;
   let passwordHash: string | null = null;
@@ -69,11 +78,11 @@ export function createSession(
   }
   
   const stmt = db.prepare(`
-    INSERT INTO sessions (id, name, password_hash, project_client, project_background, project_notes, onboarding_completed)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, name, password_hash, project_client, project_background, project_notes, onboarding_completed, timer_control_mode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   
-  stmt.run(id, name, passwordHash, projectClient, projectBackground, projectNotes, 0);
+  stmt.run(id, name, passwordHash, projectClient, projectBackground, projectNotes, 0, normalizeTimerControlMode(timerControlMode));
   
   const session: Session = {
     id,
@@ -85,7 +94,8 @@ export function createSession(
     project_background: projectBackground,
     project_notes: projectNotes,
     onboarding_completed: false,
-    is_archived: false
+    is_archived: false,
+    timer_control_mode: normalizeTimerControlMode(timerControlMode)
   };
   
   return { session, password };

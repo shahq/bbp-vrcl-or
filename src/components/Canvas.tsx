@@ -3,6 +3,10 @@ import { Star, Plus, Download, Sparkles, Loader2, Trash2 } from 'lucide-react';
 import { COLUMNS } from '../data';
 import { CardData, ConnectionData, Section } from '../types';
 import { apiUrl } from '../config/api';
+import {
+  ACT1_CARD_CHARACTER_LIMIT,
+  CANVAS_SECTION_IDS,
+} from '../config/canvasSections';
 import { motion } from 'motion/react';
 import InfiniteCanvas from './InfiniteCanvas';
 import { UserCursors } from './UserPresence';
@@ -49,7 +53,7 @@ interface ConnectionLineProps {
   interactive?: boolean;
 }
 
-const COLUMN_ORDER: Section[] = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change', 'story'];
+const COLUMN_ORDER: Section[] = [...CANVAS_SECTION_IDS];
 
 const THREAD_LANES = [
   { id: 'thread-red', label: 'Red', color: '#EF4444' },
@@ -266,7 +270,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     getThreadConnections(lane).some((connection) => connection.from === cardId)
   ), [getThreadConnections]);
 
-  const canAssembleFromChangeCard = useCallback((cardId: string, lane: ThreadLane) => (
+  const canAssembleFromCallToActionCard = useCallback((cardId: string, lane: ThreadLane) => (
     getCardSection(cardId) === 'change'
     && hasLaneIncomingConnection(cardId, lane)
     && !hasLaneOutgoingConnection(cardId, lane)
@@ -864,7 +868,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       .filter(({ lastNodeId }) => !terminalCardId || lastNodeId === terminalCardId);
 
     if (threadStories.length === 0) {
-      showToast('Connect this change card to the selected thread before assembling a story.');
+      showToast('Connect this Call to Action card to the selected thread before assembling a story.');
       return;
     }
 
@@ -1206,7 +1210,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                               type="button"
                               id={`node-right-${lane.id}-${card.id}`}
                               className={`absolute right-0 z-50 flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent transition-all duration-150 ${
-                                canAssembleFromChangeCard(card.id, lane) || hasLaneOutgoingConnection(card.id, lane)
+                                canAssembleFromCallToActionCard(card.id, lane) || hasLaneOutgoingConnection(card.id, lane)
                                   ? 'opacity-100 scale-110'
                                   : 'pointer-events-none opacity-0'
                               }`}
@@ -1214,7 +1218,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                               title={hasLaneOutgoingConnection(card.id, lane) ? `${lane.label} story connected` : `Assemble ${lane.label} story`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!canAssembleFromChangeCard(card.id, lane)) return;
+                                if (!canAssembleFromCallToActionCard(card.id, lane)) return;
                                 setActiveThreadLane(lane);
                                 handleAssembleStory(lane, card.id);
                               }}
@@ -1228,13 +1232,13 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                             >
                               <span
                                 className={`flex items-center justify-center rounded-full border-white font-bold leading-none text-white transition-all duration-150 ${
-                                  canAssembleFromChangeCard(card.id, lane)
+                                  canAssembleFromCallToActionCard(card.id, lane)
                                     ? 'h-5 w-5 border-2 text-[13px] shadow-md'
                                     : 'h-3 w-3 border text-[0px] shadow-sm'
                                 }`}
                                 style={{ backgroundColor: lane.color }}
                               >
-                                {canAssembleFromChangeCard(card.id, lane) ? '+' : ''}
+                                {canAssembleFromCallToActionCard(card.id, lane) ? '+' : ''}
                               </span>
                             </button>
                           ) : (
@@ -1410,10 +1414,10 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       )}
                       {card.section !== 'story' && (
                         <div className="absolute bottom-2 left-5 text-[10px] font-mono">
-                          <span className={`${(editingCardId === card.id ? editContent.length : card.content?.length || 0) > 100 ? 'text-orange-500' : 'text-gray-400'}`}>
-                            {editingCardId === card.id ? editContent.length : card.content?.length || 0} / 100
+                          <span className={`${(editingCardId === card.id ? editContent.length : card.content?.length || 0) > ACT1_CARD_CHARACTER_LIMIT ? 'text-orange-500' : 'text-gray-400'}`}>
+                            {editingCardId === card.id ? editContent.length : card.content?.length || 0} / {ACT1_CARD_CHARACTER_LIMIT}
                           </span>
-                          {editingCardId === card.id && editContent.length > 100 && (
+                          {editingCardId === card.id && editContent.length > ACT1_CARD_CHARACTER_LIMIT && (
                             <span className="text-orange-500 ml-1">Past limit</span>
                           )}
                         </div>

@@ -5,6 +5,7 @@ import { ModelType } from '../services/ai';
 import ChatPanel from './chat/ChatPanel';
 import type { ProjectBackgroundApplyMode } from './chat/types';
 import { apiUrl } from '../config/api';
+import { getSectionLabel, SECTION_CARD_COLORS } from '../config/canvasSections';
 
 interface RightPanelProps {
   selectedCard: string | null;
@@ -55,10 +56,7 @@ export default function RightPanel({
       .filter(existingCard => existingCard.section === card.section)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .findIndex(existingCard => existingCard.id === card.id) + 1;
-    const sectionName = card.section
-      .split('_')
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
+    const sectionName = getSectionLabel(card.section);
     return `${sectionName}-${rowNumber || 1}`;
   }, [card, cards]);
   const noteStorageKey = useMemo(
@@ -314,15 +312,9 @@ export default function RightPanel({
         {activeTab === 'cards' && card && (
           <div className="flex-1 overflow-y-auto p-8 animate-in fade-in slide-in-from-bottom-4 duration-300 custom-scrollbar">
             <h3 className="text-2xl font-bold mb-6">Act I</h3>
-            <div className="text-base font-bold mb-3 capitalize">Your {card.section.replace('_', ' ')}</div>
+            <div className="text-base font-bold mb-3">{getSectionLabel(card.section)}</div>
             <div className={`p-5 rounded-xl mb-8 relative border border-black/5 shadow-sm
-              ${card.section === 'place' ? 'bg-[#e8f5e9]' : ''}
-              ${card.section === 'role' ? 'bg-[#ffebee]' : ''}
-              ${card.section === 'challenge' ? 'bg-[#e3f2fd]' : ''}
-              ${card.section === 'point_a' ? 'bg-[#f3e5f5]' : ''}
-              ${card.section === 'point_b' ? 'bg-[#e0f7fa]' : ''}
-              ${card.section === 'change' ? 'bg-white border-2 border-gray-800' : ''}
-              ${card.section === 'story' ? 'bg-[#fff9c4]' : ''}
+              ${SECTION_CARD_COLORS[card.section]}
             `}>
               {card.starred && <Star size={16} className="absolute top-4 left-4 text-gray-900 fill-gray-900" />}
               <div className={`text-base font-medium ${card.starred ? 'mt-6' : ''}`}>

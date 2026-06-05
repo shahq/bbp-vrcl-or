@@ -1,5 +1,15 @@
 import type * as Party from "partykit/server";
 import type { CardData, ConnectionData, SessionNote } from "../src/types";
+import {
+  DEFAULT_TIMER_CONTROL_MODE,
+  applyTimerCommand,
+  createDefaultTimerState,
+  deriveTimerSnapshot,
+  normalizeTimerControlMode,
+  type SharedTimerState,
+  type TimerCommand,
+  type TimerControlMode,
+} from "../src/config/timer";
 
 type ConnectionRole = "admin" | "participant";
 
@@ -32,13 +42,16 @@ export type Message =
   | { type: "connection:create"; connection: ConnectionData; timestamp: number; userId: string }
   | { type: "connection:delete"; connectionId: string; timestamp: number; userId: string }
   | { type: "note:update"; note: SessionNote; timestamp: number; userId: string }
+  | { type: "timer:command"; command: TimerCommand; timestamp: number; userId: string }
+  | { type: "timer:settings"; controlMode: TimerControlMode; timestamp: number; userId: string }
+  | { type: "timer:update"; timer: SharedTimerState; timestamp: number; userId: string }
   | { type: "presence:update"; user: UserPresence; timestamp: number }
   | { type: "cursor:move"; userId: string; x: number; y: number; timestamp: number }
   | { type: "user:join"; user: UserPresence; timestamp: number }
   | { type: "user:leave"; userId: string; timestamp: number }
   | { type: "admin:kick"; connectionId?: string; userId?: string; timestamp: number }
   | { type: "user:kick"; userId: string; message: string; timestamp: number }
-  | { type: "room:snapshot"; users: UserPresence[]; connections: LiveConnection[]; timestamp: number };
+  | { type: "room:snapshot"; users: UserPresence[]; connections: LiveConnection[]; timer: SharedTimerState; timestamp: number };
 
 interface RoomState {
   lastActivity: number;
@@ -57,6 +70,14 @@ interface ConnectionState {
 interface AdminTokenPayload {
   role: "admin";
   sessionId: string;
+  exp: number;
+}
+
+interface SessionSettingsTokenPayload {
+  type: "session-settings";
+  sessionId: string;
+  timerControlMode: TimerControlMode;
+  sessionUpdatedAt: string;
   exp: number;
 }
 
@@ -118,17 +139,60 @@ async function verifyAdminToken(token: string, secret: string): Promise<boolean>
   return timingSafeEqual(new Uint8Array(expectedSignature), decodeBase64Url(signature));
 }
 
+async function verifySessionSettingsToken(token: string, secret: string): Promise<SessionSettingsTokenPayload | null> {
+  const [encodedPayload, signature] = token.split(".");
+  if (!encodedPayload || !signature) return null;
+
+  let payload: SessionSettingsTokenPayload;
+  try {
+    payload = JSON.parse(decodeBase64UrlText(encodedPayload)) as SessionSettingsTokenPayload;
+  } catch {
+    return null;
+  }
+
+  if (
+    payload.type !== "session-settings" ||
+    typeof payload.sessionId !== "string" ||
+    typeof payload.sessionUpdatedAt !== "string" ||
+    typeof payload.exp !== "number" ||
+    payload.exp <= Date.now()
+  ) {
+    return null;
+  }
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const expectedSignature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(encodedPayload));
+
+  if (!timingSafeEqual(new Uint8Array(expectedSignature), decodeBase64Url(signature))) {
+    return null;
+  }
+
+  return {
+    ...payload,
+    timerControlMode: normalizeTimerControlMode(payload.timerControlMode),
+  };
+}
+
 export default class SessionServer implements Party.Server {
   options: Party.ServerOptions = {
     hibernate: false,
   };
 
   private state: RoomState;
+  private timer: SharedTimerState;
+  private timerSettingsUpdatedAt = 0;
 
   constructor(readonly room: Party.Room) {
     this.state = {
       lastActivity: Date.now(),
     };
+    this.timer = createDefaultTimerState(DEFAULT_TIMER_CONTROL_MODE);
     this.scheduleSnapshot();
   }
 
@@ -215,6 +279,7 @@ export default class SessionServer implements Party.Server {
       type: "room:snapshot",
       users: this.getActiveUsers(connections),
       connections,
+      timer: deriveTimerSnapshot(this.timer),
       timestamp: Date.now(),
     };
   }
@@ -240,6 +305,45 @@ export default class SessionServer implements Party.Server {
 
     const verified = await verifyAdminToken(adminToken, secret);
     return verified ? "admin" : "participant";
+  }
+
+  private getSessionIdFromRoom(): string {
+    return this.room.id.replace(/^session-/, "");
+  }
+
+  private async applySessionSettings(ctx: Party.ConnectionContext): Promise<void> {
+    const secret = String(this.room.env.PARTYKIT_ADMIN_SECRET || this.room.env.ADMIN_PASSWORD || "shazam!");
+    const url = new URL(ctx.request.url);
+    const sessionToken = url.searchParams.get("sessionToken");
+    if (!sessionToken) return;
+
+    const payload = await verifySessionSettingsToken(sessionToken, secret);
+    if (!payload || payload.sessionId !== this.getSessionIdFromRoom()) return;
+
+    const tokenUpdatedAt = Date.parse(payload.sessionUpdatedAt) || 0;
+    if (tokenUpdatedAt < this.timerSettingsUpdatedAt) return;
+
+    this.timerSettingsUpdatedAt = tokenUpdatedAt;
+    this.timer = {
+      ...this.timer,
+      controlMode: payload.timerControlMode,
+      updatedAt: Date.now(),
+    };
+  }
+
+  private canControlTimer(sender: Party.Connection): boolean {
+    const senderState = this.getConnectionState(sender);
+    return senderState.role === "admin" || this.timer.controlMode === "everyone";
+  }
+
+  private broadcastTimerUpdate(userId: string): void {
+    const message: Message = {
+      type: "timer:update",
+      timer: deriveTimerSnapshot(this.timer),
+      timestamp: Date.now(),
+      userId,
+    };
+    this.room.broadcast(JSON.stringify(message));
   }
 
   private disconnectConnection(connectionId?: string, userId?: string): boolean {
@@ -270,6 +374,7 @@ export default class SessionServer implements Party.Server {
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext): Promise<void> {
+    await this.applySessionSettings(ctx);
     const role = await this.resolveRole(ctx);
     this.updateConnectionState(conn, {
       role,
@@ -296,6 +401,40 @@ export default class SessionServer implements Party.Server {
         case "note:update":
           this.room.broadcast(message, [sender.id]);
           break;
+
+        case "timer:settings": {
+          const senderState = this.getConnectionState(sender);
+          if (senderState.role !== "admin") {
+            console.warn("[PartyKit] Ignoring timer:settings from non-admin connection", sender.id);
+            break;
+          }
+
+          this.timer = {
+            ...deriveTimerSnapshot(this.timer),
+            controlMode: normalizeTimerControlMode(data.controlMode),
+            updatedAt: Date.now(),
+            updatedBy: data.userId,
+          };
+          this.timerSettingsUpdatedAt = Date.now();
+          this.broadcastTimerUpdate(data.userId);
+          break;
+        }
+
+        case "timer:command": {
+          if (!this.canControlTimer(sender)) {
+            console.warn("[PartyKit] Ignoring timer:command from unauthorized connection", sender.id);
+            break;
+          }
+
+          this.timer = applyTimerCommand(
+            deriveTimerSnapshot(this.timer),
+            data.command,
+            data.userId,
+            Date.now()
+          );
+          this.broadcastTimerUpdate(data.userId);
+          break;
+        }
 
         case "presence:update":
         case "user:join":

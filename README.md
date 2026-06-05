@@ -14,13 +14,12 @@ Beyond Bullet Points is a collaborative storytelling canvas for building present
 - Project overviews and full canvases can be exported as real `.docx` Word documents. Sessions can also be exported as ZIP, Markdown, JSON, or PDF.
 - Exported session ZIP files can be uploaded back into an existing session as a replace-current-session restore path.
 - The canvas right panel includes a shared **Notes** notepad for admins and guests with edit access. Notes autosave, sync in realtime, and export with the session.
-- The canvas organizes ideas into 7 sections:
-  - `place`
+- The canvas organizes ideas into 6 sections:
+  - `place` (Setting)
   - `role`
-  - `challenge`
   - `point_a`
   - `point_b`
-  - `change`
+  - `change` (Call to Action)
   - `story`
 - Cards can be created, edited, reordered, starred, connected, and exported.
 - Each participant has a personal color-coded story thread. Users can share the same cards as other participants without blocking each other's paths.
@@ -236,8 +235,9 @@ npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
 - Password-protected sessions require the correct session password for edit access.
 - Guests with edit access can manage brief documents and regenerate cards, but they still cannot access the admin dashboard, create/delete sessions, or complete first-time onboarding.
 - Live cursors, presence, and card updates sync in real time through PartyKit.
+- The canvas timer can run as a shared PartyKit timer. Admins choose per session whether only admins or everyone can control it.
 - Thread colors distinguish participant-owned story paths across connected cards.
-- Each participant can have one active linear story thread across the ordered columns: `place` -> `role` -> `challenge` -> `point_a` -> `point_b` -> `change` -> `story`.
+- Each participant can have one active linear story thread across the ordered columns: `place` (Setting) -> `role` -> `point_a` -> `point_b` -> `change` (Call to Action) -> `story`.
 - Multiple participants can connect through the same card because connection identity includes the thread owner instead of only `from` and `to`.
 - **Assemble My Story** uses only the current user's thread and sorts connected cards by column sequence, not by the order in which connections were created.
 - Story cards are treated as generated results, so unconnected story cards are not dimmed when a user's thread changes.
@@ -259,6 +259,11 @@ The server exposes endpoints for:
 - Importing exported session ZIPs into the current session as a replace-current-session restore
 
 ## Recent Changes
+
+### Act I Generation Update (2026-06-05)
+- **Five live Act I sections:** The canvas now uses Setting, Role, Point A, Point B, and Call to Action plus Story. Persisted IDs remain `place`, `role`, `point_a`, `point_b`, `change`, and `story`.
+- **Updated generation contract:** Generated cards follow `BBP_ACT1_GENERATION_SPEC.md`, producing three 90-character headline options per live section with varied openings and no required "You are" prefix.
+- **Live timer mode:** The top-bar timer now syncs through PartyKit on the canvas. Admins can set each session to admin-only timer control or everyone-can-control mode.
 
 ### UI Cleanup (2026-05-27)
 - **Overview page layout:** The right chat panel now uses `33vw` so the main brief content gets the remaining ~67% of the viewport width. The "Hero:" / "Challenge:" header block is removed from the overview right panel.
@@ -300,7 +305,7 @@ The server exposes endpoints for:
 - **Upload-generated brief:** New Project uploads can now be synthesized into a project overview brief through the AI provider seam, using extracted text, summaries, and per-upload source notes.
 - **Brief edit flow:** The brief can be saved without generating a canvas; completed canvases can return to the brief; edit-mode users can regenerate cards behind a destructive confirmation.
 - **Canvas brief panel:** The right panel now shows a collapsible `Project overview [project name]` accordion instead of disconnected hero/challenge labels.
-- **Chat workspace polish:** The chat context block is hidden for now, the composer is more compact, and selected cards appear as small context pills such as `Challenge-2`.
+- **Chat workspace polish:** The chat context block is hidden for now, the composer is more compact, and selected cards appear as small context pills such as `Point A-2`.
 - **Selection behavior:** Clicking empty canvas space clears the selected card and hides the composer pill.
 - **Generated-card refresh:** AI-generated ideas for empty cards now replace the editing placeholder immediately when generation completes.
 
@@ -309,10 +314,11 @@ The server exposes endpoints for:
 - **Sidebar hidden for non-admins:** Non-admin users no longer see the left sidebar; layout expands to fill the space
 - **Compact sidebar mode:** Admins can collapse the sidebar to a narrow icon bar (`localStorage` persisted)
 - **Top-bar help entry:** Play icon opens a tutorial dropdown with swappable video-provider seam
+- **Help resources menu:** Help resources live in `src/tutorials.ts` as `HELP_RESOURCES`. `TopBar` renders mixed video/document rows with icons; video rows call `App`'s selected tutorial state and `Canvas` renders `FloatingVideoPlayer` as a draggable snap-to-corner overlay above the canvas. For YouTube videos, set `url` to the public watch URL and `embedUrl` to `https://www.youtube.com/embed/<video-id>?rel=0&playsinline=1`. Document rows can set `url` to a downloadable PDF/workbook and `format` to a short badge such as `PDF`; rows without a URL are visible placeholders only.
 
 ### Canvas Behavior Refinement (Slice E)
-- **100-character guidance:** AI prompts now request max 100-character sentences
-- **Live character counter:** Shows "X / 100" in the lower-left of each card; turns orange past the limit with "Past limit" warning
+- **90-character guidance:** AI prompts now request max 90-character sentences
+- **Live character counter:** Shows "X / 90" in the lower-left of each card; turns orange past the limit with "Past limit" warning
 - **Story counter hidden:** Story cards skip the character counter (they hold long aggregated text)
 - **Story aggregation:** "Assemble My Story" deterministically concatenates the current user's connected cards into paragraphs — no AI call, preserves workshop intent
 - **Non-linear assembly fixed:** Forward DFS from all root nodes handles any wiring order

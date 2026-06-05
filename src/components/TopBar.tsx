@@ -6,13 +6,21 @@ import React, {
   useCallback,
 } from "react";
 import {
+  FileText,
   Play,
   Pause,
   RotateCcw,
   X,
   ExternalLink,
 } from "lucide-react";
-import { TUTORIALS, TutorialItem } from "../tutorials";
+import { HELP_RESOURCES, TutorialItem } from "../tutorials";
+import {
+  DEFAULT_TIMER_DURATION_MS,
+  getTimerRemainingMs,
+  type SharedTimerState,
+  type TimerCommand,
+  type TimerControlMode,
+} from "../config/timer";
 
 interface TopBarProps {
   children?: ReactNode;
@@ -22,6 +30,10 @@ interface TopBarProps {
   onTutorialSelect?: (tutorial: TutorialItem) => void;
   showTitle?: boolean;
   showTimer?: boolean;
+  sharedTimer?: SharedTimerState;
+  canControlTimer?: boolean;
+  timerControlMode?: TimerControlMode;
+  onTimerCommand?: (command: TimerCommand) => void;
 }
 
 export default function TopBar({
@@ -32,19 +44,43 @@ export default function TopBar({
   onTutorialSelect,
   showTitle = true,
   showTimer = true,
+  sharedTimer,
+  canControlTimer = true,
+  timerControlMode = "admin",
+  onTimerCommand,
 }: TopBarProps) {
-  const [minutes, setMinutes] = useState(0);
-  const [seconds, setSeconds] = useState(0);
-  const [lastSetTime, setLastSetTime] = useState({ minutes: 0, seconds: 0 });
+  const defaultTimerMinutes = Math.floor(DEFAULT_TIMER_DURATION_MS / 60000);
+  const defaultTimerSeconds = Math.floor((DEFAULT_TIMER_DURATION_MS % 60000) / 1000);
+  const [minutes, setMinutes] = useState(defaultTimerMinutes);
+  const [seconds, setSeconds] = useState(defaultTimerSeconds);
+  const [lastSetTime, setLastSetTime] = useState({
+    minutes: defaultTimerMinutes,
+    seconds: defaultTimerSeconds,
+  });
   const [isRunning, setIsRunning] = useState(false);
+  const [timerNow, setTimerNow] = useState(Date.now());
   const [editingField, setEditingField] = useState<
     "minutes" | "seconds" | null
   >(null);
   const [editValue, setEditValue] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const sharedCompletionRef = useRef<number | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
+
+  const handleHelpResourceClick = (resource: (typeof HELP_RESOURCES)[number]) => {
+    if (resource.kind === "video") {
+      onTutorialSelect?.(resource);
+      setShowHelp(false);
+      return;
+    }
+
+    if (resource.url) {
+      window.open(resource.url, "_blank", "noopener,noreferrer");
+      setShowHelp(false);
+    }
+  };
 
   const playAlertSound = useCallback(() => {
     try {
@@ -85,30 +121,87 @@ export default function TopBar({
     }
   }, []);
 
+  const isSharedTimer = Boolean(sharedTimer && onTimerCommand);
+  const sharedRemainingMs = sharedTimer ? getTimerRemainingMs(sharedTimer, timerNow) : 0;
+  const displayTotalSeconds = isSharedTimer
+    ? Math.ceil(sharedRemainingMs / 1000)
+    : (minutes * 60) + seconds;
+  const displayMinutes = Math.floor(displayTotalSeconds / 60);
+  const displaySeconds = displayTotalSeconds % 60;
+  const displayIsRunning = isSharedTimer
+    ? sharedTimer?.status === "running" && sharedRemainingMs > 0
+    : isRunning;
+  const timerControlsDisabled = isSharedTimer && !canControlTimer;
+  const timerTitle = isSharedTimer
+    ? timerControlMode === "everyone"
+      ? "Live timer: everyone can control"
+      : "Live timer: admin controls"
+    : "Local timer";
+
+  useEffect(() => {
+    if (!isSharedTimer || sharedTimer?.status !== "running") return;
+
+    const tick = window.setInterval(() => setTimerNow(Date.now()), 250);
+    return () => window.clearInterval(tick);
+  }, [isSharedTimer, sharedTimer?.status, sharedTimer?.endsAt]);
+
+  useEffect(() => {
+    if (!isSharedTimer || !sharedTimer) return;
+
+    const remainingMs = getTimerRemainingMs(sharedTimer, timerNow);
+    if (sharedTimer.status === "running" && remainingMs === 0 && sharedCompletionRef.current !== sharedTimer.updatedAt) {
+      sharedCompletionRef.current = sharedTimer.updatedAt;
+      playAlertSound();
+      onTimerComplete?.();
+    }
+
+    if (remainingMs > 0 || sharedTimer.status !== "running") {
+      sharedCompletionRef.current = null;
+    }
+  }, [isSharedTimer, onTimerComplete, playAlertSound, sharedTimer, timerNow]);
+
   const handleStart = useCallback(() => {
+    if (isSharedTimer) {
+      if (displayTotalSeconds === 0 || timerControlsDisabled) return;
+      onTimerCommand?.({ action: "start" });
+      return;
+    }
+
     if (minutes === 0 && seconds === 0) return;
 
     setLastSetTime({ minutes, seconds });
     setIsRunning(true);
-  }, [minutes, seconds]);
+  }, [displayTotalSeconds, isSharedTimer, minutes, onTimerCommand, seconds, timerControlsDisabled]);
 
   const handlePause = useCallback(() => {
+    if (isSharedTimer) {
+      if (timerControlsDisabled) return;
+      onTimerCommand?.({ action: "pause" });
+      return;
+    }
+
     setIsRunning(false);
-  }, []);
+  }, [isSharedTimer, onTimerCommand, timerControlsDisabled]);
 
   const handleReset = useCallback(() => {
+    if (isSharedTimer) {
+      if (timerControlsDisabled) return;
+      onTimerCommand?.({ action: "reset" });
+      return;
+    }
+
     setIsRunning(false);
     setMinutes(lastSetTime.minutes);
     setSeconds(lastSetTime.seconds);
-  }, [lastSetTime]);
+  }, [isSharedTimer, lastSetTime, onTimerCommand, timerControlsDisabled]);
 
   const handlePlayPause = useCallback(() => {
-    if (isRunning) {
+    if (displayIsRunning) {
       handlePause();
     } else {
       handleStart();
     }
-  }, [isRunning, handleStart, handlePause]);
+  }, [displayIsRunning, handleStart, handlePause]);
 
   useEffect(() => {
     if (isRunning) {
@@ -140,9 +233,9 @@ export default function TopBar({
   }, [isRunning, playAlertSound, onTimerComplete, minutes]);
 
   const handleFieldClick = (field: "minutes" | "seconds") => {
-    if (isRunning) return;
+    if (displayIsRunning || timerControlsDisabled) return;
     setEditingField(field);
-    setEditValue(field === "minutes" ? String(minutes) : String(seconds));
+    setEditValue(field === "minutes" ? String(displayMinutes) : String(displaySeconds));
   };
 
   const handleFieldBlur = () => {
@@ -151,7 +244,14 @@ export default function TopBar({
       const max = editingField === "minutes" ? 90 : 59;
       const clamped = Math.max(0, Math.min(max, value));
 
-      if (editingField === "minutes") {
+      if (isSharedTimer) {
+        const nextMinutes = editingField === "minutes" ? clamped : displayMinutes;
+        const nextSeconds = editingField === "seconds" ? clamped : displaySeconds;
+        onTimerCommand?.({
+          action: "set",
+          durationMs: ((nextMinutes * 60) + nextSeconds) * 1000,
+        });
+      } else if (editingField === "minutes") {
         setMinutes(clamped);
       } else {
         setSeconds(clamped);
@@ -246,41 +346,63 @@ export default function TopBar({
                 </p>
               </div>
               <div className="p-2">
-                {TUTORIALS.map((tutorial) => (
+                {HELP_RESOURCES.map((resource) => {
+                  const isVideo = resource.kind === "video";
+                  const isActionable = isVideo ? Boolean(resource.embedUrl || resource.url) : Boolean(resource.url);
+                  const iconClassName = isVideo
+                    ? "bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100"
+                    : "bg-sky-50 text-sky-700 group-hover:bg-sky-100";
+
+                  return (
                   <button
-                    key={tutorial.id}
+                    key={resource.id}
+                    disabled={!isActionable}
                     onClick={() => {
-                      onTutorialSelect?.(tutorial);
-                      setShowHelp(false);
+                      handleHelpResourceClick(resource);
                     }}
-                    className="w-full text-left px-3 py-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                    className={`group w-full rounded-lg px-3 py-3 text-left transition-colors ${
+                      isActionable ? "hover:bg-gray-50" : "cursor-default opacity-75"
+                    }`}
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-gray-900 group-hover:text-indigo-700">
-                          {tutorial.title}
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconClassName}`}>
+                          {isVideo ? <Play size={15} fill="currentColor" /> : <FileText size={16} />}
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                          {tutorial.description}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-gray-900 group-hover:text-indigo-700">
+                            {resource.title}
+                          </div>
+                          <div className="mt-0.5 line-clamp-2 text-xs text-gray-500">
+                            {resource.description}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 ml-3 shrink-0">
-                        {tutorial.duration && (
+                      <div className="ml-3 flex shrink-0 items-center gap-2">
+                        {isVideo && resource.duration && (
                           <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                            {tutorial.duration}
+                            {resource.duration}
                           </span>
                         )}
-                        <ExternalLink
-                          size={12}
-                          className="text-gray-400 group-hover:text-indigo-600"
-                        />
+                        {!isVideo && resource.format && (
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                            {resource.format}
+                          </span>
+                        )}
+                        {isActionable && (
+                          <ExternalLink
+                            size={12}
+                            className="text-gray-400 group-hover:text-indigo-600"
+                          />
+                        )}
                       </div>
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
               <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-[11px] text-gray-400 text-center">
-                Video provider integration placeholder — swap source in
+                Help resource integration placeholder — swap source in
                 tutorials.ts
               </div>
             </div>
@@ -288,8 +410,16 @@ export default function TopBar({
         </div>
 
         {showTimer && (
-          <div className="flex items-center bg-white border border-gray-200 rounded-full px-4 py-2 shadow-sm">
-            <span className="text-sm font-bold mr-4">Set Timer</span>
+          <div className="flex items-center bg-white border border-gray-200 rounded-full px-4 py-2 shadow-sm" title={timerTitle}>
+            <button
+              type="button"
+              onClick={() => handleFieldClick("minutes")}
+              disabled={displayIsRunning || timerControlsDisabled}
+              className="text-sm font-bold mr-4 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="Set timer minutes"
+            >
+              Set Timer
+            </button>
             <div className="flex items-center mr-6">
               {editingField === "minutes" ? (
                 <input
@@ -308,9 +438,9 @@ export default function TopBar({
               ) : (
                 <span
                   onClick={() => handleFieldClick("minutes")}
-                  className={`text-lg font-mono font-medium cursor-pointer hover:text-indigo-600 ${isRunning ? "cursor-not-allowed" : ""}`}
+                  className={`text-lg font-mono font-medium cursor-pointer hover:text-indigo-600 ${displayIsRunning || timerControlsDisabled ? "cursor-not-allowed opacity-60" : ""}`}
                 >
-                  {formatNumber(minutes)}
+                  {formatNumber(displayMinutes)}
                 </span>
               )}
               <span className="text-lg font-mono font-medium mx-1">:</span>
@@ -331,19 +461,19 @@ export default function TopBar({
               ) : (
                 <span
                   onClick={() => handleFieldClick("seconds")}
-                  className={`text-lg font-mono font-medium cursor-pointer hover:text-indigo-600 ${isRunning ? "cursor-not-allowed" : ""}`}
+                  className={`text-lg font-mono font-medium cursor-pointer hover:text-indigo-600 ${displayIsRunning || timerControlsDisabled ? "cursor-not-allowed opacity-60" : ""}`}
                 >
-                  {formatNumber(seconds)}
+                  {formatNumber(displaySeconds)}
                 </span>
               )}
             </div>
             <div className="flex items-center gap-3 text-gray-500">
               <button
                 onClick={handlePlayPause}
-                className="hover:text-indigo-600 transition-colors"
-                disabled={minutes === 0 && seconds === 0}
+                className="hover:text-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={displayTotalSeconds === 0 || timerControlsDisabled}
               >
-                {isRunning ? (
+                {displayIsRunning ? (
                   <Pause size={16} fill="currentColor" />
                 ) : (
                   <Play size={16} fill="currentColor" />
@@ -351,7 +481,8 @@ export default function TopBar({
               </button>
               <button
                 onClick={handleReset}
-                className="hover:text-indigo-600 transition-colors"
+                className="hover:text-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={timerControlsDisabled}
               >
                 <RotateCcw size={16} />
               </button>

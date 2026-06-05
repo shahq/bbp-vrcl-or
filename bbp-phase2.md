@@ -29,7 +29,7 @@ In progress now:
 Recently completed:
 
 - [x] Slice B: Role-aware beta UX (see [`IMPLEMENTATION.md`](./IMPLEMENTATION.md))
-- [x] Slice E: 100-character card guidance + AI prompt updates + story aggregation + inline edit polish
+- [x] Slice E: 90-character card guidance + AI prompt updates + story aggregation + inline edit polish
 - [x] Connection system: line positioning, hit detection, card-to-card Shift+drag connections
 - [x] Inline edit mode: transparent textarea, auto-resize, click-outside-to-cancel, no chunky buttons
 - [x] Project Overview flow: upload-generated brief, save-only edits, and confirmed card regeneration
@@ -286,24 +286,24 @@ This is strong product polish and improves the core workshop workflow.
 #### 5.1 AI card generation length guidance
 Requirement:
 
-- AI-generated card content should target a maximum of 100 characters.
-- The card editor itself should not hard-stop the user at 100 characters.
-- Instead, show a clear indicator when the user is over 100 characters.
+- AI-generated card content should target a maximum of 90 characters.
+- The card editor itself should not hard-stop the user at 90 characters.
+- Instead, show a clear indicator when the user is over 90 characters.
 
-Status: [x] Done — Live counter added to `Canvas.tsx` editing textarea. Shows "X / 100" in gray, turns orange with "You are past 100 characters" past the limit. Typing is never blocked. Empty cards enter edit mode on focus so the counter is always visible. AI prompts updated to request max 100 characters.
+Status: [x] Done — Live counter added to `Canvas.tsx` editing textarea. Shows "X / 90" in gray, turns orange with "Past limit" past the limit. Typing is never blocked. Empty cards enter edit mode on focus so the counter is always visible. AI prompts updated to request max 90 characters.
 
 Expanded details:
 
 - Add a Twitter-like character counter beneath every card textarea (both inline canvas editing and empty-card creation).
-- The counter shows current character count (e.g., "X / 100").
-- When the user passes 100 characters, display a soft notice: "You are past 100 characters".
+- The counter shows current character count (e.g., "X / 90").
+- When the user passes 90 characters, display a soft notice: "Past limit".
 - Typing remains allowed; the counter stays visible as a persistent reminder.
 - Apply the same counter to any future card editing surfaces (e.g., RightPanel notes-to-card flow).
 
 Notes:
 
 - This should be a guidance system, not a hard validation rule.
-- Prompts for generated card suggestions should also align with the 100-character target.
+- Prompts for generated card suggestions should also align with the 90-character target.
 - Consider extracting a reusable `CardEditor` component so counter logic is not duplicated inside `Canvas.tsx`.
 
 #### 5.2 Note synthesis into a new card
@@ -311,14 +311,14 @@ Requirement:
 
 - Allow freeform notes to be synthesized with AI into a new card.
 
-Status: [x] Done — RightPanel card notes persist per selected card in local storage, synthesize into a 100-character-target card via the AI provider seam, and require explicit Create/Reject confirmation before adding the card.
+Status: [x] Done — RightPanel card notes persist per selected card in local storage. The Act I generation seam now targets 90-character cards.
 
 Two tracks:
 
 1. **RightPanel notes textarea (immediate)**
    - Wire the existing "Add Notes" textarea in the RightPanel to per-card persisted state.
    - Add a **"Synthesize into new card"** button next to the textarea.
-   - When clicked, call an AI endpoint that summarizes the note text into a concise, 100-character-target card sentence.
+   - When clicked, call an AI endpoint that summarizes the note text into a concise, 90-character-target card sentence.
    - Create the resulting card in the same section (or an adjacent section) via the existing `onCardAdd` flow.
    - Use the chat/action confirmation pattern (explicit Apply/Create) before finalizing.
 
@@ -516,7 +516,7 @@ Current hotspots:
 
 ### Slice E: Canvas behavior refinement
 
-- [x] add 100-character guidance for cards (live counter + soft notice)
+- [x] add 90-character guidance for cards (live counter + soft notice)
 - [x] update AI prompts for concise card suggestions
 - [x] replace story generation with paragraph aggregation
 - [x] note synthesis into a new card (RightPanel track)

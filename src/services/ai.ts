@@ -1,5 +1,12 @@
 import { apiUrl } from '../config/api';
 import type { ProjectBriefQuestion, ProjectBriefQuestionnaire } from '../config/projectBriefQuestionnaire';
+import {
+  ACT1_CARD_CHARACTER_LIMIT,
+  ACT1_SECTION_IDS,
+  getSectionLabel,
+  isAct1SectionId,
+  type Act1SectionId,
+} from '../config/canvasSections';
 import { CardData, ProjectAttachment } from '../types';
 
 export type ModelType = string;
@@ -16,14 +23,59 @@ interface ChatGenerationContext {
   }>;
 }
 
-function assertNonStoryCardVoice(cards: Array<{ section: string; content: string }>) {
-  const invalidCards = cards.filter((card) =>
-    card.section !== 'story' && !card.content.trim().startsWith('You are')
-  );
+function normalizeGeneratedSentence(content: unknown): string {
+  return typeof content === 'string' ? content.replace(/\s+/g, ' ').trim() : '';
+}
 
-  if (invalidCards.length > 0) {
-    throw new Error('The AI model returned cards that do not start with "You are". Please regenerate.');
+function hasMultipleSentences(content: string): boolean {
+  const sentenceEnds = content.match(/[.!?](?=\s|$)/g);
+  return Boolean(sentenceEnds && sentenceEnds.length > 1);
+}
+
+function isValidAct1CardContent(content: string): boolean {
+  return Boolean(content)
+    && content.length <= ACT1_CARD_CHARACTER_LIMIT
+    && !content.includes('\n')
+    && !hasMultipleSentences(content);
+}
+
+function assertValidSingleAct1Idea(section: string, content: string) {
+  if (!isAct1SectionId(section)) {
+    throw new Error(`The AI model returned an unsupported section: ${section}`);
   }
+
+  if (!isValidAct1CardContent(content)) {
+    throw new Error(`The AI model returned an invalid ${getSectionLabel(section)} idea. Please regenerate.`);
+  }
+}
+
+function buildAct1CardGenerationInstructions() {
+  return `
+    ACT 1 generation rules:
+    - Generate Act I as a progressive narrative argument, not isolated sentences.
+    - The flow is Setting -> Role -> Point A -> Point B -> Call to Action.
+    - Each section must introduce new information, increase clarity or urgency, and move the story forward.
+    - Generate exactly 3 options per section.
+    - Each option must be a single sentence of ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
+    - Each option must contain one idea only and be readable as a standalone presentation headline.
+    - Use active voice, present tense, clear conversational language, audience-focused framing, and compressed phrasing.
+    - Avoid corporate jargon, buzzwords, marketing language, sales language, formal phrasing, and multi-idea sentences.
+    - Do not include product names, product features, implementation details, technical architecture, marketing claims, company-centric framing, or solution details except in Call to Action.
+    - Determine direct audience mode ("you", "your") or shared perspective mode ("we", "our", "us") from the Project Overview.
+    - Use the same perspective across all five sections.
+    - Do not default to "You..." for every sentence.
+    - Vary openings across pronoun-led, environment-led, situation-led, pressure-led, and outcome-led structures.
+    - Across all options, no more than 2 sentences should start with the same word.
+    - Do not repeat previous sections, mirror Point A in Point B form, or turn Point B into Call to Action wording.
+    - Before returning, verify: 3 options per section, ${ACT1_CARD_CHARACTER_LIMIT} characters or less, one idea per sentence, consistent perspective, no repetition, natural spoken phrasing.
+
+    Section-specific rules:
+    - place (Setting): Define the environment the audience operates in. Include industry conditions, external pressures, market dynamics, or operational environment. Exclude problems, solutions, and outcomes.
+    - role (Role): Define audience responsibility. Include accountability, ownership, leadership, or mission. Exclude problems, outcomes, and frustration.
+    - point_a (Point A): Describe current friction or limitation. Include friction, inefficiency, constraints, or selective grounded risks. At least 1 option should be a standard challenge; at least 2 should include stakes when contextually appropriate. Avoid exaggeration and fear-based language.
+    - point_b (Point B): Define the desired future state. Include improved capability, success state, or operational benefit. Exclude methods, tools, and implementation.
+    - change (Call to Action): Define the required shift to move from Point A to Point B. Include decisions, commitments, strategic shifts, or organizational change. Exclude product pitches, benefits, and outcomes already stated in Point B.
+  `;
 }
 
 async function requestTextCompletion(
@@ -93,30 +145,18 @@ async function requestChatCompletion(
 export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'minimax-m2.5'): Promise<CardData[]> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-    Based on the following project context, generate ideas for the Act I story structure.
+    Based on the following project context, generate Act I headline options for the canvas.
 
     Client: ${client || 'Unknown Client'}
-    Background: ${background || 'No background provided.'}
+    Project Overview: ${background || 'No background provided.'}
     Additional Notes: ${notes || 'None.'}
 
-    Generate 2-3 ideas for each of the following sections:
-    - place: The setting or current situation of the audience/client.
-    - role: The role the audience/client plays in this setting.
-    - challenge: The main problem or obstacle they are facing.
-    - point_a: Where they are right now (the starting point).
-    - point_b: Where they need to be (the desired destination).
-    - change: The transformation or action required to get from A to B.
-
-    Make the ideas concise, engaging, and directly related to the provided context.
-    Each idea must be a single sentence of maximum 100 characters.
-    Every content value must start with the exact words "You are".
-    Do not start any card with "The", "They", "We", "It", "Your", "You must", or "You need".
-    Use second-person framing consistently, for example: "You are balancing precise logistics with an informal outdoor dining experience."
+    ${buildAct1CardGenerationInstructions()}
     
     IMPORTANT: You must return ONLY a valid JSON array of objects. Do not include markdown formatting like \`\`\`json.
     Ensure all double quotes inside the content strings are properly escaped (e.g., \\").
     Each object must have exactly two properties:
-    - "section": Must be one of: "place", "role", "challenge", "point_a", "point_b", "change"
+    - "section": Must be one of: ${ACT1_SECTION_IDS.map((section) => `"${section}"`).join(', ')}
     - "content": The idea content as a string.
   `;
 
@@ -140,18 +180,36 @@ export async function generateCards(client: string, background: string, notes: s
       throw new Error("The AI model returned malformed JSON. Please try again.");
     }
     
-    const validSections = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change'];
-    
-    const cards = parsed
-      .filter((item: any) => validSections.includes(item.section))
-      .map((item: any, index: number) => ({
-        id: `gen-c${index}`,
-        section: item.section as any,
-        content: item.content,
-        starred: false
-      }));
+    if (!Array.isArray(parsed)) {
+      throw new Error("The AI model returned malformed JSON. Please try again.");
+    }
 
-    assertNonStoryCardVoice(cards);
+    const cardsBySection = ACT1_SECTION_IDS.reduce((acc, section) => {
+      acc[section] = [];
+      return acc;
+    }, {} as Record<Act1SectionId, string[]>);
+
+    parsed.forEach((item: any) => {
+      if (!isAct1SectionId(item?.section)) return;
+      const content = normalizeGeneratedSentence(item.content);
+      if (!isValidAct1CardContent(content)) return;
+      if (cardsBySection[item.section].length < 3) {
+        cardsBySection[item.section].push(content);
+      }
+    });
+
+    const incompleteSection = ACT1_SECTION_IDS.find((section) => cardsBySection[section].length < 3);
+    if (incompleteSection) {
+      throw new Error(`The AI model did not return 3 valid ${getSectionLabel(incompleteSection)} cards. Please regenerate.`);
+    }
+
+    const cards = ACT1_SECTION_IDS.flatMap((section) => cardsBySection[section].map((content, index) => ({
+      id: `gen-${section}-${index}`,
+      section,
+      content,
+      starred: false
+    })));
+
     return cards;
   } catch (error) {
     console.error("Error generating cards:", error);
@@ -160,36 +218,28 @@ export async function generateCards(client: string, background: string, notes: s
 }
 
 export async function generateSingleIdea(client: string, background: string, notes: string, section: string, model: ModelType = 'minimax-m2.5'): Promise<string> {
+  if (!isAct1SectionId(section)) {
+    throw new Error(`Unsupported Act I section: ${section}`);
+  }
+
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-    Based on the following project context, generate ONE concise, engaging idea for the "${section}" section of Act I.
+    Based on the following project context, generate ONE concise, engaging headline for the "${getSectionLabel(section)}" section of Act I.
 
     Client: ${client || 'Unknown Client'}
-    Background: ${background || 'No background provided.'}
+    Project Overview: ${background || 'No background provided.'}
     Additional Notes: ${notes || 'None.'}
 
-    Section definitions:
-    - place: The setting or current situation of the audience/client.
-    - role: The role the audience/client plays in this setting.
-    - challenge: The main problem or obstacle they are facing.
-    - point_a: Where they are right now (the starting point).
-    - point_b: Where they need to be (the desired destination).
-    - change: The transformation or action required to get from A to B.
-    - story: A creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles and mapping out the path to success.
+    ${buildAct1CardGenerationInstructions()}
 
-    The idea must be a single sentence of maximum 100 characters.
-    ${section === 'story'
-      ? 'For the story section, write a short creative story sentence.'
-      : 'The idea must start with the exact words "You are". Do not start with "The", "They", "We", "It", "Your", "You must", or "You need".'}
+    Return one option for section "${section}" only.
     Return ONLY the idea text, nothing else.
   `;
 
   try {
     const responseText = await requestTextCompletion(prompt, model);
-    const idea = responseText.trim() || "Generated idea";
-    if (section !== 'story' && !idea.startsWith('You are')) {
-      throw new Error('The AI model returned an idea that does not start with "You are". Please try again.');
-    }
+    const idea = normalizeGeneratedSentence(responseText);
+    assertValidSingleAct1Idea(section, idea);
     return idea;
   } catch (error) {
     console.error("Error generating single idea:", error);
@@ -322,7 +372,7 @@ export async function generateTransformationStory(client: string, background: st
     Story Chain (Connected Ideas):
     ${chainText}
 
-    The story should be an arc following the logical steps of the card columns: Place > Role > Challenge > Point A > Point B > Change.
+    The story should be an arc following the logical steps of the card columns: Setting > Role > Point A > Point B > Call to Action.
     Address the business/client directly in the third person (e.g., "You summoned your small team...", "They realized...").
     Write a creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles, and mapping out the path to success.
     Make it dynamic, engaging, and directly connected to the provided nodes.

@@ -79,36 +79,50 @@ Behavior rules:
 
 ## 2. Card Generation Prompts
 
+The full Act I headline rulebook lives in [`BBP_ACT1_GENERATION_SPEC.md`](./BBP_ACT1_GENERATION_SPEC.md). Executable prompts preserve the existing persisted section IDs while using the updated user-facing names:
+
+- `place` -> Setting
+- `role` -> Role
+- `point_a` -> Point A
+- `point_b` -> Point B
+- `change` -> Call to Action
+
 ### 2.1 Generate Cards
 
 Used to create the initial set of Act I cards.
 
 ```text
 You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-Based on the following project context, generate ideas for the Act I story structure.
+Based on the following project context, generate Act I headline options for the canvas.
 
 Client: {client}
-Background: {background}
+Project Overview: {background}
 Additional Notes: {notes}
 
-Generate 2-3 ideas for each of the following sections:
-- place: The setting or current situation of the audience/client.
-- role: The role the audience/client plays in this setting.
-- challenge: The main problem or obstacle they are facing.
-- point_a: Where they are right now (the starting point).
-- point_b: Where they need to be (the desired destination).
-- change: The transformation or action required to get from A to B.
+Generate Act I as a progressive narrative argument:
+Setting -> Role -> Point A -> Point B -> Call to Action.
 
-Make the ideas concise, engaging, and directly related to the provided context.
-Each idea must be a single sentence of maximum 100 characters.
-Every content value must start with the exact words "You are".
-Do not start any card with "The", "They", "We", "It", "Your", "You must", or "You need".
-Use second-person framing consistently.
+Generate exactly 3 options per section:
+- place (Setting)
+- role (Role)
+- point_a (Point A)
+- point_b (Point B)
+- change (Call to Action)
+
+Each option must be:
+- a single sentence
+- 90 characters or less
+- one idea only
+- standalone readable
+
+Use active voice, present tense, audience-focused framing, compressed phrasing, varied openings, and one consistent perspective (`you/your` or `we/our/us`) across all five sections.
+
+Avoid corporate jargon, buzzwords, marketing language, product names, product features, implementation details, technical architecture, company-centric framing, repetition across sections, and solution details except in Call to Action.
 
 IMPORTANT: You must return ONLY a valid JSON array of objects. Do not include markdown formatting like ```json.
 Ensure all double quotes inside the content strings are properly escaped.
 Each object must have exactly two properties:
-- "section": Must be one of: "place", "role", "challenge", "point_a", "point_b", "change"
+- "section": Must be one of: "place", "role", "point_a", "point_b", "change"
 - "content": The idea content as a string.
 ```
 
@@ -118,23 +132,22 @@ Used when generating a single card suggestion for one section.
 
 ```text
 You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-Based on the following project context, generate ONE concise, engaging idea for the "{section}" section of Act I.
+Based on the following project context, generate ONE concise, engaging headline for the "{section}" section of Act I.
 
 Client: {client}
-Background: {background}
+Project Overview: {background}
 Additional Notes: {notes}
 
-Section definitions:
-- place: The setting or current situation of the audience/client.
-- role: The role the audience/client plays in this setting.
-- challenge: The main problem or obstacle they are facing.
-- point_a: Where they are right now (the starting point).
-- point_b: Where they need to be (the desired destination).
-- change: The transformation or action required to get from A to B.
-- story: A creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles and mapping out the path to success.
+Follow the same Act I headline rules used by bulk card generation:
+- Setting -> Role -> Point A -> Point B -> Call to Action
+- 90 characters or less
+- one sentence
+- one idea
+- audience-focused
+- varied opening structure
+- no required "You are" prefix
 
-The idea must be a single sentence of maximum 100 characters.
-If the section is not story, the idea must start with the exact words "You are". Do not start with "The", "They", "We", "It", "Your", "You must", or "You need".
+Return one option for the requested section only.
 Return ONLY the idea text, nothing else.
 ```
 
@@ -154,7 +167,7 @@ Additional Notes: {notes}
 Story Chain (Connected Ideas):
 {chain text}
 
-The story should be an arc following the logical steps of the card columns: Place > Role > Challenge > Point A > Point B > Change.
+The story should be an arc following the logical steps of the card columns: Setting > Role > Point A > Point B > Call to Action.
 Address the business/client directly in the third person.
 Write a creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles, and mapping out the path to success.
 Make it dynamic, engaging, and directly connected to the provided nodes.
@@ -228,6 +241,6 @@ Requirements:
 ## 4. Notes For Review
 
 - The chat prompts are dynamic because they include current session, selected card, and uploaded attachment context.
-- The card prompts are tightly constrained to the "You are" framing and 100-character limit for non-story cards.
+- The card prompts use the five-section Act I headline rules: 3 generated options per live section, 90-character limit, varied openings, and no required "You are" prefix.
 - The brief prompts are designed to produce editable prose, not final marketing copy.
 - The questionnaire itself is defined separately in `src/config/projectBriefQuestionnaire.ts`.

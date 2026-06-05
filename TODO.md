@@ -71,15 +71,14 @@ Compared against the working TODO list and added missing follow-ups below.
 ### What is "Beyond Bullet Points"?
 **Beyond Bullet Points** is a storytelling methodology for creating compelling presentations that move beyond dry, bullet-pointed slides. Instead of listing facts, it structures presentations as a narrative journey that engages the audience emotionally and intellectually.
 
-### The 6-Column Story Framework + Story Output
-The tool uses a 6-column canvas to structure presentations, plus a Story output column:
+### The 5-Column Story Framework + Story Output
+The tool uses a 5-column canvas to structure presentations, plus a Story output column:
 
-1. **Place** - The setting/situation where the story begins
+1. **Setting** - The environment where the story begins (`place` in persisted data)
 2. **Role** - The audience's role/part in the narrative
-3. **Challenge** - The obstacle or problem to overcome
-4. **Point A** - The current state (where we are now)
-5. **Point B** - The desired destination (where we need to be)
-6. **Change** - The transformation required to get from A to B
+3. **Point A** - The current friction or limitation
+4. **Point B** - The desired future state
+5. **Call to Action** - The shift required to move from Point A to Point B (`change` in persisted data)
 
 When connected in sequence, these elements form a complete transformation story.
 
@@ -522,10 +521,21 @@ POST /api/sessions/:id/import/zip      # Replace current session from exported Z
    - [ ] Complete manual admin/guest/browser smoke testing
    - [ ] Decide the long-term relationship between local card notes and exported shared notes
 
-9. **Project Overview Reuse**
+9. **Live Shared Timer** ✅
+   - [x] Sync top-bar canvas timer state through PartyKit
+   - [x] Add per-session admin setting for `admin only` versus `everyone` timer control
+   - [x] Preserve local timer fallback when PartyKit is not connected
+   - [x] Validate participant timer control in everyone mode with an isolated PartyKit smoke test
+
+10. **Project Overview Reuse**
    - [ ] Extract the Project Overview display/edit/export section into a reusable component
    - [ ] Keep brief-generation, brief-editing, and canvas overview usage on the same component contract
    - [ ] Preserve current guest edit-permission behavior when extracting the component
+
+10. **Supabase Data-Store Migration Follow-Up**
+   - [ ] Current Act I implementation keeps persisted IDs `place` and `change` for compatibility while labeling them Setting and Call to Action
+   - [ ] During the Supabase migration, decide whether to rename persisted section IDs to `setting` and `call_to_action`
+   - [ ] If renamed, include a migration from old IDs to new IDs and update ZIP import/export compatibility
 
 ### Phase 5: UX Enhancements
 **Priority: MEDIUM**

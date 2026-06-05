@@ -4,6 +4,50 @@ This document tracks what was built, when, and why. It pairs with [`bbp-phase2.m
 
 ---
 
+## 2026-06-05 — Live shared timer controls
+
+### Summary
+Moved the canvas top-bar timer from local-only component state into the PartyKit realtime path when a session is connected. The timer still falls back to local mode if PartyKit is unavailable, but connected canvases now receive the same running timer state.
+
+### Decisions
+- **Per-session control policy:** sessions store `timer_control_mode`, defaulting to `admin`. Admins can choose `admin` or `everyone` from the dashboard and the in-session admin sidebar.
+- **PartyKit owns live timer state:** timer set/start/pause/reset commands broadcast through PartyKit. Clients compute countdown display from the shared `endsAt` timestamp instead of broadcasting every second.
+- **Signed settings token:** session responses include a short-lived signed settings token so PartyKit can initialize the persisted timer policy without trusting raw browser query params.
+
+### Files changed
+| File | What changed |
+|------|-------------|
+| `src/config/timer.ts` | New shared timer types, defaults, clamping, countdown derivation, and command reducer. |
+| `party/index.ts` | Added timer messages, room snapshot timer state, signed settings-token verification, and control-policy enforcement. |
+| `src/hooks/usePartyKit.ts` | Exposes shared timer state and send functions for timer commands/settings. |
+| `src/components/TopBar.tsx` | Supports both local fallback mode and live shared timer mode. |
+| `src/App.tsx`, `src/components/Sidebar.tsx` | Wires admin timer policy controls into the dashboard and active session sidebar. |
+| `server.ts`, `src/server/*` | Persists `timer_control_mode` for SQLite/Firestore sessions and returns signed PartyKit settings tokens. |
+
+---
+
+## 2026-06-05 — Act I five-column generation update
+
+### Summary
+Replaced the old six-column Act I generation model with the five live headline sections from `BBP_ACT1_GENERATION_SPEC.md`: Setting, Role, Point A, Point B, and Call to Action. The app keeps persisted IDs `place` and `change` for compatibility while removing `challenge` from the live canvas.
+
+### Decisions
+- **Compatibility over ID churn:** `place` remains the persisted ID for Setting and `change` remains the persisted ID for Call to Action.
+- **Challenge removed, not merged:** Local legacy `challenge` cards and their connections were deleted after a timestamped backup.
+- **90-character target:** Card generation and inline counters now use a 90-character limit for live Act I cards.
+- **Prompt behavior changed:** Generated cards no longer need to start with "You are"; prompts now require varied openings and exactly three options per live section.
+
+### Files changed
+| File | What changed |
+|------|-------------|
+| `src/config/canvasSections.ts` | New shared section labels, order, colors, legacy ID list, and 90-character limit. |
+| `src/services/ai.ts` | Replaced card prompts with the five-section Act I headline contract and stricter generated-card validation. |
+| `src/components/Canvas.tsx` | Removed the Challenge column, switched to shared section order, and updated the live counter to 90. |
+| `server.ts` | Added live-section filtering, API section validation, import dropping for legacy `challenge` cards, and updated export labels/order. |
+| `scripts/cleanup_legacy_challenge_cards.ts` | Added local cleanup script for removing persisted legacy Challenge cards. |
+
+---
+
 ## 2025-04-25 — Slice B: Role-aware beta UX
 
 ### Summary
@@ -30,18 +74,18 @@ Centralized auth state, removed the sidebar for non-admins, added a compact side
 ## 2025-04-25 — Slice E: Canvas behavior refinement (partial)
 
 ### Summary
-Updated AI prompts to target 100-character card sentences and added a live Twitter-like character counter to card editors.
+Updated AI prompts to target concise card sentences and added a live Twitter-like character counter to card editors. This was later superseded by the 2026-06-05 Act I update, which uses a 90-character limit.
 
 ### Decisions
-- **Guidance, not validation:** The counter shows "X / 100" and a soft "You are past 100 characters" notice when exceeded, but typing is never blocked.
+- **Guidance, not validation:** The counter shows the current character count and a soft warning when exceeded, but typing is never blocked.
 - **Enter edit mode on focus:** Empty cards now enter inline edit mode immediately when the textarea receives focus, so the counter is always visible during typing.
 - **Both editing paths covered:** The counter appears in the `editingCardId === card.id` branch, which handles both new card creation and double-click editing.
 
 ### Files changed
 | File | What changed |
 |------|-------------|
-| `src/services/ai.ts` | Added "maximum 100 characters" constraint to `generateCards()` and `generateSingleIdea()` prompts. |
-| `src/components/Canvas.tsx` | Added live character counter in lower-left corner of cards (`left-5` aligned with card padding, `pb-2` gap from text). Edit mode shows only the "You are past 100 characters" warning. Empty cards enter edit mode on focus. |
+| `src/services/ai.ts` | Added concise-card constraints to `generateCards()` and `generateSingleIdea()` prompts. |
+| `src/components/Canvas.tsx` | Added live character counter in lower-left corner of cards (`left-5` aligned with card padding, `pb-2` gap from text). Edit mode shows the over-limit warning. Empty cards enter edit mode on focus. |
 | `src/components/TopBar.tsx` | Replaced `HelpCircle` with `Play` icon for tutorial dropdown toggle. |
 
 ## 2025-04-25 — Slice E (continued): Story aggregation
@@ -126,7 +170,7 @@ Redesigned card edit mode to look identical to normal display, fixed story card 
   - No border, no rounded corners, no focus ring
   - `whitespace-pre-wrap`, `resize-none`, `outline-none`
 - Character counter stays visible at bottom-left during editing
-- Added `Past limit` warning inline with the counter when > 100 chars
+- Added `Past limit` warning inline with the counter when over the configured card limit
 
 **Interaction model:**
 - **Enter** → saves and exits edit mode
@@ -170,7 +214,7 @@ Refined threaded connections from global thread assembly into user-owned, color-
 ### Decisions
 - **One active thread per user:** A user's current thread is identified by `ownerUserId` when available, with color/thread metadata as fallback for older connection records.
 - **Owner-aware connection identity:** Connection IDs now include an owner/thread key before `from` and `to`, so two users can create the same visible edge without overwriting each other in SQLite or Firestore.
-- **Column order is the source of narrative order:** Story assembly uses the canonical order `place -> role -> challenge -> point_a -> point_b -> change -> story`, not the chronological order in which edges were created.
+- **Column order is the source of narrative order:** Story assembly uses the canonical order `place -> role -> point_a -> point_b -> change -> story`, not the chronological order in which edges were created.
 - **Current-user assembly only:** The button was renamed to **Assemble My Story** and now assembles only `getCurrentUserConnections()`.
 - **Story column is an output:** Story cards are generated results, not selectable hero cards, so unconnected story cards are never dimmed.
 - **Other users are visual context:** The **Show/Hide Others' Threads** switch controls visibility only. Other users' connection lines are non-interactive and do not block card or node hit targets.
@@ -258,8 +302,8 @@ This session delivered **Slice B** (Role-aware beta UX), **Slice E** (Canvas beh
 | **Auth** | Centralized auth in `AuthContext.tsx`; refactored `App.tsx` and `LoginPage.tsx` |
 | **Sidebar** | Hidden for non-admins; compact mode with `localStorage` persistence |
 | **TopBar** | Help/tutorial dropdown with Play icon; swappable video-provider seam |
-| **AI Prompts** | 100-character target for `generateCards()` and `generateSingleIdea()` |
-| **Character Counter** | Live "X / 100" in lower-left of cards; orange "Past limit" when > 100 |
+| **AI Prompts** | 90-character target for `generateCards()` and `generateSingleIdea()` |
+| **Character Counter** | Live "X / 90" in lower-left of cards; orange "Past limit" when > 90 |
 | **Story Aggregation** | Deterministic paragraph assembly; forward DFS for non-linear wiring |
 | **Connection Lines** | Continuous rAF + ResizeObserver for accurate positioning |
 | **Connection Hit Detection** | DOM-tree traversal; works on child elements |

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
 import RightPanel from './components/RightPanel';
@@ -23,6 +23,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
 import { apiUrl } from './config/api';
 import { useConfirmDialog } from './components/ConfirmDialog';
+import { normalizeTimerControlMode, type TimerControlMode } from './config/timer';
 
 // Session types
 interface Session {
@@ -35,6 +36,8 @@ interface Session {
   project_notes?: string;
   onboarding_completed: boolean;
   has_password: boolean;
+  timer_control_mode: TimerControlMode;
+  partykit_session_token?: string;
 }
 
 // Main App Component with Router
@@ -100,6 +103,7 @@ function AppRoutes() {
 // Admin Dashboard Component
 function Dashboard() {
   const { adminSessionId, logout, handleExpiredAdminSession } = useAuth();
+  const navigate = useNavigate();
   const { confirm, dialog } = useConfirmDialog();
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -213,6 +217,47 @@ function Dashboard() {
     }
   };
 
+  const updateSessionTimerControl = async (sessionId: string, timerControlMode: TimerControlMode) => {
+    try {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-session': adminSessionId!
+        },
+        body: JSON.stringify({ timer_control_mode: timerControlMode })
+      });
+
+      if (response.status === 401) {
+        await handleExpiredAdminSession();
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        showToast(errorData.error || 'Failed to update timer controls');
+        return;
+      }
+
+      const data = await response.json();
+      setAllSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+              ...session,
+              timer_control_mode: normalizeTimerControlMode(data.session?.timer_control_mode ?? timerControlMode),
+              partykit_session_token: data.session?.partykit_session_token ?? session.partykit_session_token,
+            }
+            : session
+        )
+      );
+      showToast('Timer controls updated');
+    } catch (error) {
+      console.error('Error updating timer controls:', error);
+      showToast('Failed to update timer controls');
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden">
       {dialog}
@@ -224,6 +269,7 @@ function Dashboard() {
         sessions={allSessions}
         onCreateSession={createSession}
         onDeleteSession={deleteSession}
+        onLoadSession={(sessionId) => navigate(`/${sessionId}`)}
         onLogout={logout}
         isAdmin={true}
       />
@@ -373,6 +419,19 @@ function Dashboard() {
                           )}
                           <span>&bull;</span>
                           <span>{session.onboarding_completed ? 'Ready' : 'Onboarding'}</span>
+                          <span>&bull;</span>
+                          <label className="flex items-center gap-1 text-xs text-gray-500">
+                            Timer
+                            <select
+                              value={normalizeTimerControlMode(session.timer_control_mode)}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => updateSessionTimerControl(session.id, event.target.value as TimerControlMode)}
+                              className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            >
+                              <option value="admin">Admin only</option>
+                              <option value="everyone">Everyone</option>
+                            </select>
+                          </label>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -413,7 +472,8 @@ function Dashboard() {
 
 // Session View Component (for both admin and players)
 function SessionView() {
-  const { isAdminVerified, adminSessionId, handleExpiredAdminSession } = useAuth();
+  const { isAdminVerified, isCheckingAuth, adminSessionId, handleExpiredAdminSession } = useAuth();
+  const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
   const { confirm, dialog } = useConfirmDialog();
 
@@ -438,6 +498,7 @@ function SessionView() {
   const [workspaceView, setWorkspaceView] = useState<'brief' | 'canvas'>('canvas');
   const [activeTutorial, setActiveTutorial] = useState<TutorialItem | null>(null);
   const [adminPartyKitToken, setAdminPartyKitToken] = useState<string | null>(null);
+  const [adminSessions, setAdminSessions] = useState<Session[]>([]);
   const [presenceDebug, setPresenceDebug] = useState<string>('Presence not loaded yet');
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -552,6 +613,35 @@ function SessionView() {
     };
   }, [adminSessionId, getGuestEditPassword, isAdminVerified]);
 
+  const loadAdminSessions = useCallback(async () => {
+    if (!isAdminVerified || !adminSessionId) {
+      setAdminSessions([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl('/api/sessions'), {
+        headers: { 'x-admin-session': adminSessionId },
+      });
+
+      if (response.status === 401) {
+        await handleExpiredAdminSession();
+        return;
+      }
+
+      if (response.ok) {
+        const data = await response.json();
+        setAdminSessions(data.sessions || []);
+      }
+    } catch (error) {
+      console.error('Error loading admin sessions:', error);
+    }
+  }, [adminSessionId, handleExpiredAdminSession, isAdminVerified]);
+
+  useEffect(() => {
+    loadAdminSessions();
+  }, [loadAdminSessions]);
+
   useEffect(() => {
     if (!isAdminVerified || !adminSessionId || !sessionId) {
       setAdminPartyKitToken(null);
@@ -595,7 +685,7 @@ function SessionView() {
     };
   }, [adminSessionId, isAdminVerified, handleExpiredAdminSession, sessionId]);
 
-  const shouldConnectPartyKit = !!sessionId && !!userProfile;
+  const shouldConnectPartyKit = !!sessionId && !!userProfile && !isCheckingAuth;
   const canConnectPartyKit = shouldConnectPartyKit && (!isAdminVerified || !!adminPartyKitToken);
   const partySessionId = shouldConnectPartyKit ? sessionId : null;
   const partyUserId = userProfile?.id || '';
@@ -607,6 +697,7 @@ function SessionView() {
     isConnecting,
     users: activeUsers,
     liveConnections,
+    timerState,
     currentConnectionId,
     connectionRole,
     error: partyKitError,
@@ -621,12 +712,15 @@ function SessionView() {
     sendAdminKick,
     sendProjectUpdate,
     sendNoteUpdate,
+    sendTimerCommand,
+    sendTimerSettings,
   } = usePartyKit({
     sessionId: canConnectPartyKit ? partySessionId : null,
     userId: partyUserId,
     userName: partyUserName,
     userColor: partyUserColor,
     adminToken: adminPartyKitToken,
+    sessionSettingsToken: currentSession?.partykit_session_token ?? null,
     onCardCreate: (card) => {
       setCards((prev) => {
         if (prev.find((c) => c.id === card.id)) return prev;
@@ -732,6 +826,122 @@ function SessionView() {
     }
   }, [adminPartyKitToken, connectionRole, isAdminVerified, isConnected, isConnecting, liveConnections.length, partyKitError]);
 
+  useEffect(() => {
+    if (!isAdminVerified || !currentSession) return;
+    setShowPasswordWall(false);
+    setIsEditMode(true);
+  }, [currentSession, isAdminVerified]);
+
+  const handleTimerControlModeChange = useCallback(async (timerControlMode: TimerControlMode) => {
+    if (!sessionId || !isAdminVerified || !adminSessionId) return;
+
+    try {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-session': adminSessionId,
+        },
+        body: JSON.stringify({ timer_control_mode: timerControlMode }),
+      });
+
+      if (response.status === 401) {
+        await handleExpiredAdminSession();
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        showToast(errorData.error || 'Failed to update timer controls');
+        return;
+      }
+
+      const data = await response.json();
+      const nextSession = data.session;
+      setCurrentSession((prev) => prev ? {
+        ...prev,
+        timer_control_mode: normalizeTimerControlMode(nextSession?.timer_control_mode ?? timerControlMode),
+        partykit_session_token: nextSession?.partykit_session_token ?? prev.partykit_session_token,
+      } : prev);
+      sendTimerSettings(normalizeTimerControlMode(nextSession?.timer_control_mode ?? timerControlMode));
+      showToast('Timer controls updated');
+    } catch (error) {
+      console.error('Error updating timer controls:', error);
+      showToast('Failed to update timer controls');
+    }
+  }, [adminSessionId, handleExpiredAdminSession, isAdminVerified, sendTimerSettings, sessionId]);
+
+  const handleCreateAdminSession = useCallback(async (name: string, requirePassword: boolean) => {
+    if (!isAdminVerified || !adminSessionId) return;
+
+    try {
+      const response = await fetch(apiUrl('/api/sessions'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-session': adminSessionId,
+        },
+        body: JSON.stringify({ name, require_password: requirePassword }),
+      });
+
+      if (response.status === 401) {
+        await handleExpiredAdminSession();
+        return;
+      }
+
+      if (response.ok) {
+        const data = await response.json();
+        await loadAdminSessions();
+        if (data.session?.id) {
+          navigate(`/${data.session.id}`);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        showToast(errorData.error || 'Failed to create session');
+      }
+    } catch (error) {
+      console.error('Error creating session:', error);
+      showToast('Failed to create session');
+    }
+  }, [adminSessionId, handleExpiredAdminSession, isAdminVerified, loadAdminSessions, navigate]);
+
+  const handleDeleteAdminSession = useCallback(async (targetSessionId: string) => {
+    if (!isAdminVerified || !adminSessionId) return;
+
+    const confirmed = await confirm({
+      title: 'Delete session?',
+      message: 'This will permanently delete the session, its cards, connections, notes, and uploaded metadata.',
+      confirmLabel: 'Delete session',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(apiUrl(`/api/sessions/${targetSessionId}`), {
+        method: 'DELETE',
+        headers: { 'x-admin-session': adminSessionId },
+      });
+
+      if (response.status === 401) {
+        await handleExpiredAdminSession();
+        return;
+      }
+
+      if (response.ok) {
+        await loadAdminSessions();
+        if (targetSessionId === sessionId) {
+          navigate('/');
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        showToast(errorData.error || 'Failed to delete session');
+      }
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      showToast('Failed to delete session');
+    }
+  }, [adminSessionId, confirm, handleExpiredAdminSession, isAdminVerified, loadAdminSessions, navigate, sessionId]);
+
   const loadAttachments = useCallback(async (targetSessionId: string) => {
     try {
       const response = await fetch(apiUrl(`/api/sessions/${targetSessionId}/attachments`), {
@@ -801,6 +1011,7 @@ function SessionView() {
           setCurrentSession(data.session);
           
           if (isAdminVerified) {
+            setShowPasswordWall(false);
             setIsEditMode(true);
             setCards(data.cards || []);
             setConnections(data.connections || []);
@@ -823,6 +1034,7 @@ function SessionView() {
                 if (verifyResponse.ok) {
                   const { valid } = await verifyResponse.json();
                   if (valid) {
+                    setShowPasswordWall(false);
                     setIsEditMode(true);
                     setCards(data.cards || []);
                     setConnections(data.connections || []);
@@ -843,6 +1055,7 @@ function SessionView() {
                 setShowPasswordWall(true);
               }
             } else {
+              setShowPasswordWall(false);
               setIsEditMode(true);
               setCards(data.cards || []);
               setConnections(data.connections || []);
@@ -1682,6 +1895,9 @@ function SessionView() {
 
   const showBriefWorkspace = !currentSession.onboarding_completed || workspaceView === 'brief';
   const showCanvasWorkspace = currentSession.onboarding_completed && !showBriefWorkspace;
+  const timerControlMode = normalizeTimerControlMode(currentSession.timer_control_mode);
+  const liveTimerAvailable = showCanvasWorkspace && isConnected;
+  const canControlLiveTimer = isAdminVerified || connectionRole === 'admin' || timerState.controlMode === 'everyone';
 
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden antialiased">
@@ -1704,24 +1920,32 @@ function SessionView() {
         currentView={showBriefWorkspace ? "new" : "canvas"} 
         selectedModel={selectedModel} 
         onModelChange={setSelectedModel}
-        sessions={[]} 
+        sessions={adminSessions}
         currentSession={currentSession}
         isEditMode={isEditMode}
         onLogout={() => {}}
         isAdmin={isAdminVerified}
+        onCreateSession={handleCreateAdminSession}
+        onLoadSession={(nextSessionId) => navigate(`/${nextSessionId}`)}
+        onDeleteSession={handleDeleteAdminSession}
         activeConnections={liveConnections}
         currentConnectionId={currentConnectionId || ''}
         onKickUser={connectionRole === 'admin' ? handleKickUser : undefined}
+        onTimerControlModeChange={handleTimerControlModeChange}
         presenceDebug={presenceDebug}
       />
 
       <div className="flex flex-col flex-1 min-w-0">
-        <TopBar 
+        <TopBar
           projectName={currentSession.name}
           showTitle={false}
           showTimer={!showBriefWorkspace}
           onTutorialSelect={setActiveTutorial}
-        rightContent={
+          sharedTimer={liveTimerAvailable ? timerState : undefined}
+          canControlTimer={canControlLiveTimer}
+          timerControlMode={timerControlMode}
+          onTimerCommand={liveTimerAvailable ? sendTimerCommand : undefined}
+          rightContent={
             <div className="flex items-center gap-2">
               {showCanvasWorkspace && (
                 <button

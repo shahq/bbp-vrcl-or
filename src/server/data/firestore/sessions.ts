@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { normalizeTimerControlMode } from "../../../config/timer";
 import { getFirestoreDb } from "../../firebase/app";
 import { generateSessionId, generatePassword, hashPassword, type CreateSessionOptions, type CreateSessionResult, type Session } from "../../sessions";
 import { getFirestoreCardsBySession } from "./cards";
@@ -21,7 +22,13 @@ export async function createFirestoreSession(
   name: string,
   options: CreateSessionOptions
 ): Promise<CreateSessionResult> {
-  const { requirePassword, projectClient = "", projectBackground = "", projectNotes = "" } = options;
+  const {
+    requirePassword,
+    projectClient = "",
+    projectBackground = "",
+    projectNotes = "",
+    timerControlMode,
+  } = options;
 
   let password: string | null = null;
   let passwordHash: string | null = null;
@@ -40,6 +47,7 @@ export async function createFirestoreSession(
     project_notes: projectNotes,
     onboarding_completed: false,
     is_archived: false,
+    timer_control_mode: normalizeTimerControlMode(timerControlMode),
     created_at: now,
     updated_at: now,
   });
@@ -54,6 +62,7 @@ export async function createFirestoreSession(
       project_notes: projectNotes,
       onboarding_completed: false,
       is_archived: false,
+      timer_control_mode: normalizeTimerControlMode(timerControlMode),
       created_at: now,
       updated_at: now,
     },

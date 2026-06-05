@@ -8,6 +8,15 @@ import { getCurrentBackend } from "./src/server/backend/current";
 import type { AdminSession } from "./src/server/backend/types";
 import { serializeCardFile, type CardFrontmatter } from "./src/server/files";
 import type { SessionNote } from "./src/types";
+import { createPartyKitSessionSettingsToken } from "./src/server/realtimeTokens";
+import {
+  ACT1_SECTION_IDS,
+  CANVAS_SECTION_IDS,
+  SECTION_EXPORT_TITLES,
+  getSectionLabel,
+  isCanvasSectionId,
+} from "./src/config/canvasSections";
+import { normalizeTimerControlMode } from "./src/config/timer";
 import archiver from "archiver";
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 import fs from "fs";
@@ -19,6 +28,58 @@ dotenv.config({ path: ".env" });
 dotenv.config({ path: ".env.local", override: true });
 
 const PARTYKIT_HOST = process.env.PARTYKIT_HOST || "localhost:1999";
+
+function getLiveSectionOrder() {
+  return [...CANVAS_SECTION_IDS];
+}
+
+function getExportSectionTitle(section: string) {
+  return isCanvasSectionId(section) ? SECTION_EXPORT_TITLES[section] : getSectionLabel(section);
+}
+
+function filterLiveCards<T extends { id: string; section: string }>(sessionCards: T[]): T[] {
+  return sessionCards.filter((card) => isCanvasSectionId(card.section));
+}
+
+function filterConnectionsForCards<T extends { from_card_id: string; to_card_id: string }>(
+  sessionConnections: T[],
+  sessionCards: Array<{ id: string }>
+): T[] {
+  const cardIds = new Set(sessionCards.map((card) => card.id));
+  return sessionConnections.filter((connection) =>
+    cardIds.has(connection.from_card_id) && cardIds.has(connection.to_card_id)
+  );
+}
+
+function getSafeSessionPayload(session: {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  project_client?: string;
+  project_background?: string;
+  project_notes?: string;
+  onboarding_completed: boolean;
+  password_hash?: string | null;
+  is_archived?: boolean;
+  timer_control_mode?: string;
+}) {
+  const timerControlMode = normalizeTimerControlMode(session.timer_control_mode);
+  return {
+    id: session.id,
+    name: session.name,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
+    project_client: session.project_client,
+    project_background: session.project_background,
+    project_notes: session.project_notes,
+    onboarding_completed: session.onboarding_completed,
+    has_password: !!session.password_hash,
+    is_archived: session.is_archived,
+    timer_control_mode: timerControlMode,
+    partykit_session_token: createPartyKitSessionSettingsToken(session.id, timerControlMode, session.updated_at),
+  };
+}
 
 function getAllowedOrigins() {
   const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || "")
@@ -239,16 +300,7 @@ async function createSessionDocxBuffer(
   }>,
   sessionNotes: SessionNote[] = []
 ): Promise<Buffer> {
-  const sectionOrder = ["place", "role", "challenge", "point_a", "point_b", "change", "story"];
-  const sectionTitles: Record<string, string> = {
-    place: "Place: Your Setting",
-    role: "Role: Your Part",
-    challenge: "Challenge: The Obstacle",
-    point_a: "Point A: Where You Are",
-    point_b: "Point B: Where You Need to Be",
-    change: "Change: The Transformation",
-    story: "Story: The Journey",
-  };
+  const sectionOrder = getLiveSectionOrder();
   const title = session.project_client || session.name || "Beyond Bullet Points";
   const children: Paragraph[] = [
     new Paragraph({
@@ -305,7 +357,7 @@ async function createSessionDocxBuffer(
     if (sectionCards.length === 0) continue;
 
     children.push(new Paragraph({
-      text: sectionTitles[section] || section,
+      text: getExportSectionTitle(section),
       heading: HeadingLevel.HEADING_2,
       spacing: { before: 240, after: 160 },
     }));
@@ -403,10 +455,12 @@ function parseImportedCard(cardText: string, fallbackOrder: number): ImportedCar
 
   const frontmatter = yaml.load(match[1]) as Partial<CardFrontmatter> | null;
   if (!frontmatter?.id || !frontmatter.section) return null;
+  const section = String(frontmatter.section);
+  if (!isCanvasSectionId(section)) return null;
 
   return {
     id: String(frontmatter.id),
-    section: String(frontmatter.section),
+    section,
     content: match[2].trim(),
     order: Number.isFinite(Number(frontmatter.order)) ? Number(frontmatter.order) : fallbackOrder,
     starred: frontmatter.starred === true,
@@ -474,7 +528,7 @@ async function startServer() {
                   properties: {
                     section: {
                       type: Type.STRING,
-                      description: "Must be one of: place, role, challenge, point_a, point_b, change",
+                      description: `Must be one of: ${ACT1_SECTION_IDS.join(", ")}`,
                     },
                     content: {
                       type: Type.STRING,
@@ -632,18 +686,7 @@ async function startServer() {
     try {
       const allSessions = await sessions.getAllSessions();
       // Remove password_hash from response
-      const safeSessions = allSessions.map(s => ({
-        id: s.id,
-        name: s.name,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-        project_client: s.project_client,
-        project_background: s.project_background,
-        project_notes: s.project_notes,
-        onboarding_completed: s.onboarding_completed,
-        has_password: !!s.password_hash,
-        is_archived: s.is_archived
-      }));
+      const safeSessions = allSessions.map(getSafeSessionPayload);
       res.json({ sessions: safeSessions });
     } catch (error: any) {
       console.error("Error listing sessions:", error);
@@ -654,7 +697,7 @@ async function startServer() {
   // Create new session (Admin only)
   app.post("/api/sessions", adminAuth.requireAdminAuth, async (req, res) => {
     try {
-      const { name, require_password, project_client, project_background, project_notes } = req.body;
+      const { name, require_password, project_client, project_background, project_notes, timer_control_mode } = req.body;
       
       if (!name) {
         return res.status(400).json({ error: "Session name is required" });
@@ -666,7 +709,8 @@ async function startServer() {
         requirePassword: require_password === true,
         projectClient: project_client || "",
         projectBackground: project_background || "",
-        projectNotes: project_notes || ""
+        projectNotes: project_notes || "",
+        timerControlMode: normalizeTimerControlMode(timer_control_mode),
       });
       
       // Write initial session metadata to file
@@ -682,15 +726,8 @@ async function startServer() {
       
       res.status(201).json({
         session: {
-          id: result.session.id,
-          name: result.session.name,
+          ...getSafeSessionPayload(result.session),
           password: result.password, // Return password if one was generated
-          has_password: !!result.session.password_hash,
-          created_at: result.session.created_at,
-          project_client: result.session.project_client,
-          project_background: result.session.project_background,
-          project_notes: result.session.project_notes,
-          onboarding_completed: result.session.onboarding_completed
         }
       });
     } catch (error: any) {
@@ -710,10 +747,13 @@ async function startServer() {
       }
       
       // Get cards for this session
-      const sessionCards = await cards.getCardsBySession(id);
+      const sessionCards = filterLiveCards(await cards.getCardsBySession(id));
       
       // Get connections for this session
-      const sessionConnections = await connections.getConnectionsBySession(id);
+      const sessionConnections = filterConnectionsForCards(
+        await connections.getConnectionsBySession(id),
+        sessionCards
+      );
       const simplifiedConnections = sessionConnections.map(c => ({
         id: c.id,
         from: c.from_card_id,
@@ -724,17 +764,7 @@ async function startServer() {
       }));
       
       res.json({
-        session: {
-          id: session.id,
-          name: session.name,
-          created_at: session.created_at,
-          updated_at: session.updated_at,
-          project_client: session.project_client,
-          project_background: session.project_background,
-          project_notes: session.project_notes,
-          onboarding_completed: session.onboarding_completed,
-          has_password: !!session.password_hash
-        },
+        session: getSafeSessionPayload(session),
         cards: sessionCards,
         connections: simplifiedConnections
       });
@@ -767,7 +797,7 @@ async function startServer() {
   app.put("/api/sessions/:id", requireEditPermission, async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, project_client, project_background, project_notes } = req.body;
+      const { name, project_client, project_background, project_notes, timer_control_mode } = req.body;
       
       const session = await sessions.getSession(id);
       if (!session) {
@@ -779,6 +809,12 @@ async function startServer() {
       if (project_client !== undefined) updates.project_client = project_client;
       if (project_background !== undefined) updates.project_background = project_background;
       if (project_notes !== undefined) updates.project_notes = project_notes;
+      if (timer_control_mode !== undefined) {
+        if (!adminAuth.isAdminAuthenticated(req)) {
+          return res.status(403).json({ error: "Admin authentication required to change timer controls." });
+        }
+        updates.timer_control_mode = normalizeTimerControlMode(timer_control_mode);
+      }
       
       const success = await sessions.updateSession(id, updates);
       
@@ -795,7 +831,8 @@ async function startServer() {
         });
       }
       
-      res.json({ success });
+      const updatedSession = await sessions.getSession(id);
+      res.json({ success, session: updatedSession ? getSafeSessionPayload(updatedSession) : undefined });
     } catch (error: any) {
       console.error("Error updating session:", error);
       res.status(500).json({ error: error.message });
@@ -1154,8 +1191,11 @@ async function startServer() {
       await notes.replaceNotes(id, importedNotes);
 
       const updatedSession = await sessions.getSession(id);
-      const updatedCards = await cards.getCardsBySession(id);
-      const updatedConnections = await connections.getConnectionsBySession(id);
+      const updatedCards = filterLiveCards(await cards.getCardsBySession(id));
+      const updatedConnections = filterConnectionsForCards(
+        await connections.getConnectionsBySession(id),
+        updatedCards
+      );
       const updatedAttachments = await attachments.listAttachments<ProjectAttachment>(id);
       const updatedNotes = await notes.listNotes(id);
 
@@ -1219,6 +1259,10 @@ async function startServer() {
       if (!section) {
         return res.status(400).json({ error: "Section is required" });
       }
+
+      if (!isCanvasSectionId(section)) {
+        return res.status(400).json({ error: `Unsupported section: ${section}` });
+      }
       
       const session = await sessions.getSession(sessionId);
       if (!session) {
@@ -1262,7 +1306,12 @@ async function startServer() {
       }
       
       const updates: any = {};
-      if (section !== undefined) updates.section = section;
+      if (section !== undefined) {
+        if (!isCanvasSectionId(section)) {
+          return res.status(400).json({ error: `Unsupported section: ${section}` });
+        }
+        updates.section = section;
+      }
       if (order !== undefined) updates.order_index = order;
       if (starred !== undefined) updates.starred = starred;
       
@@ -1300,6 +1349,10 @@ async function startServer() {
       
       if (!section || !card_ids || !Array.isArray(card_ids)) {
         return res.status(400).json({ error: "Section and card_ids array are required" });
+      }
+
+      if (!isCanvasSectionId(section)) {
+        return res.status(400).json({ error: `Unsupported section: ${section}` });
       }
       
       const success = await cards.reorderCards(sessionId, section, card_ids);
@@ -1378,8 +1431,11 @@ async function startServer() {
     const session = await sessions.getSession(id);
     if (!session) return null;
 
-    const sessionCards = await cards.getCardsBySession(id);
-    const sessionConnections = await connections.getConnectionsBySession(id);
+    const sessionCards = filterLiveCards(await cards.getCardsBySession(id));
+    const sessionConnections = filterConnectionsForCards(
+      await connections.getConnectionsBySession(id),
+      sessionCards
+    );
     const sessionNotes = await notes.listNotes(id);
 
     let markdown = `# Beyond Bullet Points: ${id}\n\n`;
@@ -1401,21 +1457,12 @@ async function startServer() {
 
     markdown += `## The Story\n\n`;
 
-    const sectionOrder = ['place', 'role', 'challenge', 'point_a', 'point_b', 'change', 'story'];
-    const sectionTitles: Record<string, string> = {
-      place: 'Place: Your Setting',
-      role: 'Role: Your Part',
-      challenge: 'Challenge: The Obstacle',
-      point_a: 'Point A: Where You Are',
-      point_b: 'Point B: Where You Need to Be',
-      change: 'Change: The Transformation',
-      story: 'Story: The Journey'
-    };
+    const sectionOrder = getLiveSectionOrder();
 
     for (const section of sectionOrder) {
       const sectionCards = sessionCards.filter(c => c.section === section);
       if (sectionCards.length > 0) {
-        markdown += `### ${sectionTitles[section]}\n\n`;
+        markdown += `### ${getExportSectionTitle(section)}\n\n`;
         for (const card of sectionCards) {
           if (card.content) {
             markdown += `${card.content}\n\n`;
@@ -1432,7 +1479,7 @@ async function startServer() {
         const fromCard = sessionCards.find(c => c.id === conn.from_card_id);
         const toCard = sessionCards.find(c => c.id === conn.to_card_id);
         if (fromCard && toCard) {
-          markdown += `- **${fromCard.section}** -> **${toCard.section}**\n`;
+          markdown += `- **${getExportSectionTitle(fromCard.section)}** -> **${getExportSectionTitle(toCard.section)}**\n`;
         }
       }
       markdown += `\n`;
@@ -1453,8 +1500,11 @@ async function startServer() {
         return res.status(404).json({ error: "Session not found" });
       }
       
-      const sessionCards = await cards.getCardsBySession(id);
-      const sessionConnections = await connections.getConnectionsBySession(id);
+      const sessionCards = filterLiveCards(await cards.getCardsBySession(id));
+      const sessionConnections = filterConnectionsForCards(
+        await connections.getConnectionsBySession(id),
+        sessionCards
+      );
       const sessionAttachments = await attachments.listAttachments<ProjectAttachment>(id);
       const sessionNotes = await notes.listNotes(id);
 
@@ -1593,8 +1643,11 @@ async function startServer() {
         return res.status(404).json({ error: "Session not found" });
       }
 
-      const sessionCards = await cards.getCardsBySession(id);
-      const sessionConnections = await connections.getConnectionsBySession(id);
+      const sessionCards = filterLiveCards(await cards.getCardsBySession(id));
+      const sessionConnections = filterConnectionsForCards(
+        await connections.getConnectionsBySession(id),
+        sessionCards
+      );
       const sessionNotes = await notes.listNotes(id);
       const docx = await createSessionDocxBuffer(
         {
@@ -1676,8 +1729,11 @@ async function startServer() {
         return res.status(404).json({ error: "Session not found" });
       }
       
-      const sessionCards = await cards.getCardsBySession(id);
-      const sessionConnections = await connections.getConnectionsBySession(id);
+      const sessionCards = filterLiveCards(await cards.getCardsBySession(id));
+      const sessionConnections = filterConnectionsForCards(
+        await connections.getConnectionsBySession(id),
+        sessionCards
+      );
       const sessionNotes = await notes.listNotes(id);
       
       const exportData = {

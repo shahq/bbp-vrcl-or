@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import PartySocket from 'partysocket';
 import type { Message, UserPresence, LiveConnection } from '../../party/index';
 import type { CardData, ConnectionData, SessionNote } from '../types';
+import { createDefaultTimerState, type SharedTimerState, type TimerCommand, type TimerControlMode } from '../config/timer';
 import {
   PARTYKIT_HOST,
   PARTYKIT_HTTP_PROTOCOL,
@@ -15,6 +16,7 @@ interface UsePartyKitOptions {
   userName: string;
   userColor: string;
   adminToken?: string | null;
+  sessionSettingsToken?: string | null;
   onCardCreate?: (card: CardData) => void;
   onCardUpdate?: (cardId: string, updates: Partial<CardData>) => void;
   onCardDelete?: (cardId: string) => void;
@@ -34,6 +36,7 @@ interface UsePartyKitReturn {
   error: Error | null;
   users: UserPresence[];
   liveConnections: LiveConnection[];
+  timerState: SharedTimerState;
   currentConnectionId: string | null;
   connectionRole: 'admin' | 'participant' | null;
   sendCardCreate: (card: CardData) => void;
@@ -47,6 +50,8 @@ interface UsePartyKitReturn {
   sendAdminKick: (connectionId: string, userId?: string | null) => void;
   sendProjectUpdate: (updates: { project_client?: string; project_background?: string; project_notes?: string }) => void;
   sendNoteUpdate: (note: SessionNote) => void;
+  sendTimerCommand: (command: TimerCommand) => void;
+  sendTimerSettings: (controlMode: TimerControlMode) => void;
   reconnect: () => void;
 }
 
@@ -56,6 +61,7 @@ export function usePartyKit({
   userName,
   userColor,
   adminToken,
+  sessionSettingsToken,
   onCardCreate,
   onCardUpdate,
   onCardDelete,
@@ -73,12 +79,14 @@ export function usePartyKit({
   const [error, setError] = useState<Error | null>(null);
   const [users, setUsers] = useState<UserPresence[]>([]);
   const [liveConnections, setLiveConnections] = useState<LiveConnection[]>([]);
+  const [timerState, setTimerState] = useState<SharedTimerState>(() => createDefaultTimerState());
   const [currentConnectionId, setCurrentConnectionId] = useState<string | null>(null);
   const [connectionRole, setConnectionRole] = useState<'admin' | 'participant' | null>(null);
 
   const socketRef = useRef<PartySocket | null>(null);
   const kickedMessageRef = useRef<string | null>(null);
   const adminTokenRef = useRef(adminToken);
+  const sessionSettingsTokenRef = useRef(sessionSettingsToken);
   const lastCursorSentAtRef = useRef(0);
   const callbacksRef = useRef({
     onCardCreate,
@@ -103,6 +111,10 @@ export function usePartyKit({
   useEffect(() => {
     adminTokenRef.current = adminToken;
   }, [adminToken]);
+
+  useEffect(() => {
+    sessionSettingsTokenRef.current = sessionSettingsToken;
+  }, [sessionSettingsToken]);
 
   useEffect(() => {
     userPresenceRef.current = {
@@ -146,6 +158,7 @@ export function usePartyKit({
       setIsConnected(false);
       setUsers([]);
       setLiveConnections([]);
+      setTimerState(createDefaultTimerState());
       setCurrentConnectionId(null);
       setConnectionRole(null);
       return;
@@ -161,7 +174,10 @@ export function usePartyKit({
       room,
       party: PARTYKIT_PARTY,
       protocol: PARTYKIT_WS_PROTOCOL,
-      query: () => (adminTokenRef.current ? { adminToken: adminTokenRef.current } : {}),
+      query: () => ({
+        ...(adminTokenRef.current ? { adminToken: adminTokenRef.current } : {}),
+        ...(sessionSettingsTokenRef.current ? { sessionToken: sessionSettingsTokenRef.current } : {}),
+      }),
     });
 
     socketRef.current = socket;
@@ -236,9 +252,16 @@ export function usePartyKit({
             }
             break;
 
+          case 'timer:update':
+            setTimerState(data.timer);
+            break;
+
           case 'room:snapshot': {
             setUsers(Array.isArray(data.users) ? data.users : []);
             setLiveConnections(Array.isArray(data.connections) ? data.connections : []);
+            if (data.timer) {
+              setTimerState(data.timer);
+            }
             const selfConnection = Array.isArray(data.connections)
               ? data.connections.find((entry) => entry.connectionId === socket.id)
               : undefined;
@@ -326,10 +349,12 @@ export function usePartyKit({
       socket.close();
       socketRef.current = null;
     };
-  }, [
-    sessionId,
-    userId,
-  ]);
+	  }, [
+	    sessionId,
+	    adminToken,
+	    sessionSettingsToken,
+	    userId,
+	  ]);
 
   const sendCardCreate = useCallback((card: CardData) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -475,6 +500,30 @@ export function usePartyKit({
     }
   }, [userId]);
 
+  const sendTimerCommand = useCallback((command: TimerCommand) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      const message: Message = {
+        type: 'timer:command',
+        command,
+        timestamp: Date.now(),
+        userId,
+      };
+      socketRef.current.send(JSON.stringify(message));
+    }
+  }, [userId]);
+
+  const sendTimerSettings = useCallback((controlMode: TimerControlMode) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      const message: Message = {
+        type: 'timer:settings',
+        controlMode,
+        timestamp: Date.now(),
+        userId,
+      };
+      socketRef.current.send(JSON.stringify(message));
+    }
+  }, [userId]);
+
   const reconnect = useCallback(() => {
     if (socketRef.current) {
       kickedMessageRef.current = null;
@@ -488,6 +537,7 @@ export function usePartyKit({
     error,
     users,
     liveConnections,
+    timerState,
     currentConnectionId,
     connectionRole,
     sendCardCreate,
@@ -501,6 +551,8 @@ export function usePartyKit({
     sendAdminKick,
     sendProjectUpdate,
     sendNoteUpdate,
+    sendTimerCommand,
+    sendTimerSettings,
     reconnect,
   };
 }

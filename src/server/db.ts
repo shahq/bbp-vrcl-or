@@ -72,6 +72,12 @@ db.exec(`
 
 const connectionColumns = db.prepare(`PRAGMA table_info(connections)`).all() as Array<{ name: string }>;
 const hasConnectionColumn = (name: string) => connectionColumns.some((column) => column.name === name);
+const sessionColumns = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>;
+const hasSessionColumn = (name: string) => sessionColumns.some((column) => column.name === name);
+
+if (!hasSessionColumn('timer_control_mode')) {
+  db.exec(`ALTER TABLE sessions ADD COLUMN timer_control_mode TEXT DEFAULT 'admin'`);
+}
 
 if (!hasConnectionColumn('thread_id')) {
   db.exec(`ALTER TABLE connections ADD COLUMN thread_id TEXT`);

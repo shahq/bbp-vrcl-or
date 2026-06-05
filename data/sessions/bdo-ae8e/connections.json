@@ -8,22 +8,6 @@
     "ownerUserId": "user_8e0zrephr"
   },
   {
-    "id": "user_8e0zrephr-card-1779153554367-card-1779153554824",
-    "from": "card-1779153554367",
-    "to": "card-1779153554824",
-    "threadId": "thread-user_8e0zrephr",
-    "color": "#F59E0B",
-    "ownerUserId": "user_8e0zrephr"
-  },
-  {
-    "id": "user_8e0zrephr-card-1779153554824-card-1779153556248",
-    "from": "card-1779153554824",
-    "to": "card-1779153556248",
-    "threadId": "thread-user_8e0zrephr",
-    "color": "#F59E0B",
-    "ownerUserId": "user_8e0zrephr"
-  },
-  {
     "id": "user_8e0zrephr-card-1779153556248-card-1779153556739",
     "from": "card-1779153556248",
     "to": "card-1779153556739",
@@ -51,22 +35,6 @@
     "id": "admin_8b5ww0vui-card-1779153552986-card-1779153554367",
     "from": "card-1779153552986",
     "to": "card-1779153554367",
-    "threadId": "thread-admin_8b5ww0vui",
-    "color": "#EF4444",
-    "ownerUserId": "admin_8b5ww0vui"
-  },
-  {
-    "id": "admin_8b5ww0vui-card-1779153554367-card-1779153555297",
-    "from": "card-1779153554367",
-    "to": "card-1779153555297",
-    "threadId": "thread-admin_8b5ww0vui",
-    "color": "#EF4444",
-    "ownerUserId": "admin_8b5ww0vui"
-  },
-  {
-    "id": "admin_8b5ww0vui-card-1779153555297-card-1779153555763",
-    "from": "card-1779153555297",
-    "to": "card-1779153555763",
     "threadId": "thread-admin_8b5ww0vui",
     "color": "#EF4444",
     "ownerUserId": "admin_8b5ww0vui"

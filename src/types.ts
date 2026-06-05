@@ -1,4 +1,6 @@
-export type Section = 'place' | 'role' | 'challenge' | 'point_a' | 'point_b' | 'change' | 'story';
+import type { CanvasSectionId } from './config/canvasSections';
+
+export type Section = CanvasSectionId;
 
 export interface CardData {
   id: string;

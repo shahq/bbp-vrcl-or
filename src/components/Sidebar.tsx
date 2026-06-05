@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, Cpu, Plus, Trash2, FolderOpen, Lock, Unlock, Download, LogOut, Shield, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { ChevronDown, Cpu, Plus, Trash2, Lock, Unlock, Download, LogOut, Shield, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { ModelType } from '../services/ai';
 import type { LiveConnection } from '../../party/index';
+import { normalizeTimerControlMode, type TimerControlMode } from '../config/timer';
 
 interface Session {
   id: string;
@@ -18,6 +19,7 @@ interface Session {
   project_notes?: string;
   onboarding_completed?: boolean;
   has_password?: boolean;
+  timer_control_mode?: TimerControlMode;
 }
 
 interface SidebarProps {
@@ -38,6 +40,7 @@ interface SidebarProps {
   activeConnections?: LiveConnection[];
   currentConnectionId?: string;
   onKickUser?: (connectionId: string, userId?: string | null) => Promise<void>;
+  onTimerControlModeChange?: (mode: TimerControlMode) => Promise<void>;
   presenceDebug?: string;
 }
 
@@ -59,6 +62,7 @@ export default function Sidebar({
   activeConnections = [],
   currentConnectionId = '',
   onKickUser,
+  onTimerControlModeChange,
   presenceDebug
 }: SidebarProps) {
   const [isCreating, setIsCreating] = useState(false);
@@ -204,8 +208,11 @@ export default function Sidebar({
               </label>
             </div>
 
-            {/* Session List */}
-            <div className="px-2 pb-2 max-h-48 overflow-y-auto">
+            {/* Recent Session List */}
+            <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              Recent Sessions
+            </div>
+            <div className="px-2 pb-0 max-h-48 overflow-y-auto">
               {sessions.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-gray-500 italic">
                   No sessions yet. Create one above.
@@ -215,7 +222,7 @@ export default function Sidebar({
                   <div
                     key={session.id}
                     onClick={() => handleSessionClick(session.id)}
-                    className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm mb-1 transition-colors ${
+                    className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${
                       currentSession?.id === session.id
                         ? 'bg-indigo-100 text-indigo-900'
                         : 'hover:bg-white text-gray-700'
@@ -270,6 +277,21 @@ export default function Sidebar({
             </div>
 
             <div className="px-3 pb-3">
+              <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  Timer Control
+                </label>
+                <select
+                  value={normalizeTimerControlMode(currentSession.timer_control_mode)}
+                  onChange={(event) => onTimerControlModeChange?.(event.target.value as TimerControlMode)}
+                  disabled={!onTimerControlModeChange}
+                  className="mt-1 w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+                >
+                  <option value="admin">Admin only</option>
+                  <option value="everyone">Everyone</option>
+                </select>
+              </div>
+
               {visibleConnections.length === 0 ? (
                 <div className="px-3 py-3 text-sm text-gray-500 bg-gray-50 rounded-lg">
                   No other active players right now.
@@ -374,24 +396,13 @@ export default function Sidebar({
           </div>
         )}
         
-        {/* ORIGINAL NAVIGATION */}
-        <div className="py-4 flex-1">
-          <div className="px-4 py-2 flex items-center justify-between font-semibold border-b border-gray-100 cursor-pointer hover:bg-gray-50">
-            Projects <ChevronDown size={16} />
-          </div>
+        {/* Workshop navigation */}
+        <div>
           <div className="px-4 py-2 flex items-center justify-between font-semibold bg-indigo-50 text-indigo-900 border-b border-gray-100 cursor-pointer">
             Workshops <ChevronDown size={16} />
           </div>
           <div className="bg-gray-50 py-2">
             <div className="px-8 py-1.5 text-sm font-medium text-gray-900">Beyond BulletPoints</div>
-            <div className="px-8 py-1.5 text-sm text-gray-600 hover:bg-gray-100 cursor-pointer">Introduction</div>
-            <div className="px-8 py-1.5 text-sm text-gray-600 hover:bg-gray-100 cursor-pointer">Open Recent</div>
-            <div 
-              className={`px-8 py-1.5 text-sm cursor-pointer ${currentView === 'new' ? 'bg-cyan-50 text-cyan-900 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
-              onClick={() => onViewChange('new')}
-            >
-              New Project
-            </div>
           </div>
         </div>
         

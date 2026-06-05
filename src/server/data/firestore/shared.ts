@@ -1,6 +1,7 @@
 import type { Card } from "../../cards";
 import type { Connection } from "../../connections";
 import type { Session } from "../../sessions";
+import { normalizeTimerControlMode } from "../../../config/timer";
 
 export function sessionDocToModel(
   id: string,
@@ -19,6 +20,7 @@ export function sessionDocToModel(
     project_notes: data.project_notes ?? "",
     onboarding_completed: Boolean(data.onboarding_completed),
     is_archived: Boolean(data.is_archived),
+    timer_control_mode: normalizeTimerControlMode(data.timer_control_mode),
   };
 }
 
