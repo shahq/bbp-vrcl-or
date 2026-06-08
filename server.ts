@@ -24,8 +24,14 @@ import JSZip from "jszip";
 import yaml from "js-yaml";
 import path from "path";
 
+const shellEnv = { ...process.env };
 dotenv.config({ path: ".env" });
 dotenv.config({ path: ".env.local", override: true });
+for (const [key, value] of Object.entries(shellEnv)) {
+  if (value !== undefined) {
+    process.env[key] = value;
+  }
+}
 
 const PARTYKIT_HOST = process.env.PARTYKIT_HOST || "localhost:1999";
 
