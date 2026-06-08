@@ -1,31 +1,15 @@
-import type { AdminAuthProvider } from "../backend/types";
 import { passwordAdminAuthProvider } from "./password-admin-auth";
+import type { AdminAuthProvider } from "../backend/types";
 
-function createFirebasePlaceholderProvider(): AdminAuthProvider {
-  const notImplemented = () => {
-    throw new Error(
-      "ADMIN_AUTH_PROVIDER=firebase is not implemented yet. Complete the Firebase Auth migration before enabling it."
-    );
-  };
-
-  return {
-    cleanupExpiredSessions: () => undefined,
-    verifyAdminPassword: () => notImplemented(),
-    createAdminSession: () => notImplemented(),
-    deleteAdminSession: () => notImplemented(),
-    isAdminAuthenticated: () => notImplemented(),
-    requireAdminAuth: (_req, _res, _next) => notImplemented(),
-    createPartyKitAdminToken: () => notImplemented(),
-  };
+function getAdminAuthProviderName() {
+  return process.env.ADMIN_AUTH_PROVIDER?.trim().toLowerCase() || "password";
 }
 
 export function getAdminAuthProvider(): AdminAuthProvider {
-  const provider = process.env.ADMIN_AUTH_PROVIDER || "password";
+  const provider = getAdminAuthProviderName();
   switch (provider) {
     case "password":
       return passwordAdminAuthProvider;
-    case "firebase":
-      return createFirebasePlaceholderProvider();
     default:
       throw new Error(`Unsupported ADMIN_AUTH_PROVIDER: ${provider}`);
   }

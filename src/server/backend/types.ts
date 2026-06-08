@@ -1,8 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
-import type { CreateSessionOptions, CreateSessionResult, Session } from "../sessions";
 import type { Card } from "../cards";
 import type { Connection } from "../connections";
+import type { CreateSessionOptions, CreateSessionResult, Session } from "../sessions";
 import type { SessionNote } from "../../types";
+import type { TimerControlMode } from "../../config/timer";
 
 export interface AdminSession {
   id: string;
@@ -18,6 +19,11 @@ export interface AdminAuthProvider {
   isAdminAuthenticated(req: Request): boolean;
   requireAdminAuth(req: Request, res: Response, next: NextFunction): void;
   createPartyKitAdminToken(sessionId: string): string;
+  createPartyKitSessionSettingsToken(settings: {
+    sessionId: string;
+    timerControlMode: TimerControlMode;
+    sessionUpdatedAt: string;
+  }): string;
 }
 
 export interface SessionStore {
@@ -29,9 +35,12 @@ export interface SessionStore {
     id: string,
     updates: Partial<Omit<Session, "id" | "password_hash" | "created_at">>
   ): Promise<boolean>;
+  updateSessionPassword(id: string, newPassword: string | null): Promise<boolean>;
+  archiveSession(id: string): Promise<boolean>;
   deleteSession(id: string): Promise<boolean>;
   verifySessionPassword(id: string, password: string): Promise<boolean>;
   completeOnboarding(id: string): Promise<boolean>;
+  isSessionOpen(id: string): Promise<boolean>;
 }
 
 export interface CardStore {
@@ -57,7 +66,14 @@ export interface CardStore {
 
 export interface ConnectionStore {
   getConnectionsBySession(sessionId: string): Promise<Connection[]>;
-  createConnection(sessionId: string, fromCardId: string, toCardId: string, threadId?: string, color?: string, ownerUserId?: string): Promise<Connection>;
+  createConnection(
+    sessionId: string,
+    fromCardId: string,
+    toCardId: string,
+    threadId?: string,
+    color?: string,
+    ownerUserId?: string
+  ): Promise<Connection>;
   deleteConnection(id: string, sessionId?: string): Promise<boolean>;
   deleteConnectionsForCard(cardId: string, sessionId?: string): Promise<boolean>;
   saveAllConnections(

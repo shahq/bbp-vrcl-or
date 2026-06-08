@@ -1,13 +1,13 @@
-import * as legacyAdmin from "../admin";
+import * as admin from "../admin";
 import type { AdminAuthProvider } from "../backend/types";
 
 export const passwordAdminAuthProvider: AdminAuthProvider = {
-  cleanupExpiredSessions: legacyAdmin.cleanupExpiredSessions,
-  verifyAdminPassword: legacyAdmin.verifyAdminPassword,
-  createAdminSession: legacyAdmin.createAdminSession,
-  deleteAdminSession: legacyAdmin.deleteAdminSession,
-  isAdminAuthenticated: legacyAdmin.isAdminAuthenticated,
-  requireAdminAuth: legacyAdmin.requireAdminAuth,
-  createPartyKitAdminToken: legacyAdmin.createPartyKitAdminToken,
+  cleanupExpiredSessions: admin.cleanupExpiredSessions,
+  verifyAdminPassword: admin.verifyAdminPassword,
+  createAdminSession: admin.createAdminSession,
+  deleteAdminSession: admin.deleteAdminSession,
+  isAdminAuthenticated: admin.isAdminAuthenticated,
+  requireAdminAuth: admin.requireAdminAuth,
+  createPartyKitAdminToken: admin.createPartyKitAdminToken,
+  createPartyKitSessionSettingsToken: admin.createPartyKitSessionSettingsToken,
 };
-
