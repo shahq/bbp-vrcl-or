@@ -2,6 +2,7 @@
 
 const baseUrl = (process.env.API_BASE_URL || "http://localhost:3107").replace(/\/$/, "");
 const adminPassword = process.env.ADMIN_PASSWORD || "shazam!";
+const smokeRequestCookie = process.env.SMOKE_REQUEST_COOKIE || "";
 
 const createdSessionIds = [];
 let adminSessionId = "";
@@ -18,6 +19,7 @@ async function request(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       ...(adminSessionId ? { "x-admin-session": adminSessionId } : {}),
+      ...(smokeRequestCookie ? { Cookie: smokeRequestCookie } : {}),
       ...(options.headers || {}),
     },
   });

@@ -18,7 +18,7 @@ The goal is to keep the current Vite app behavior intact while preparing a minim
 | Surface | Current repo shape | Phase 5 implication |
 | --- | --- | --- |
 | Frontend | Vite build output in `dist/`; currently deployable as static SPA assets. | `vercel.json` now configures Vite frontend preview hosting and SPA fallback rewrites. |
-| Compatibility API | Express app factory in `server.ts`; `api/[...path].ts` wraps it for Vercel `/api/*` compatibility. | Keep on the existing backend host until the Vercel API wrapper is deployed with server-side env vars and smoke-tested. |
+| Compatibility API | Express app factory in `server.ts`; `api/[...].js` wraps a generated Vercel server bundle for `/api/*` compatibility. | Keep on the existing backend host until the Vercel API wrapper is deployed with server-side env vars and smoke-tested. |
 | Persistence | `DATA_STORE_PROVIDER=sqlite` fallback and `DATA_STORE_PROVIDER=convex` provider seam. | Vercel-hosted API should use `DATA_STORE_PROVIDER=convex`; SQLite is not durable on serverless hosts. |
 | Attachment storage | `ATTACHMENT_STORE_PROVIDER=local` fallback and `ATTACHMENT_STORE_PROVIDER=convex` provider seam. | Vercel-hosted API should use `ATTACHMENT_STORE_PROVIDER=convex`; local files are not durable on serverless hosts. |
 | Document extraction | `src/server/documents.ts` shells out to `scripts/extract_attachment.py`. | This is the largest Vercel serverless blocker and remains a Phase 6 extraction decision. |
@@ -129,16 +129,17 @@ Completed prep:
 4. Moved shared session id/password helpers out of SQLite-backed `src/server/sessions.ts`.
 5. Updated Convex data stores to import those DB-free helpers.
 6. Removed eager SQLite/native imports from Convex data-provider paths by lazy-loading local SQLite stores.
-7. Added `api/[...path].ts` as the thin Vercel wrapper around `createApp()`.
+7. Added `api/[...].js` as the thin Vercel wrapper around a generated `createApp()` bundle.
+8. Added a Vercel API bundle build step and deployed remote-built preview `https://sqd-hdsmq3b8g-the-shapers-projects.vercel.app`.
+9. Verified the preview API wrapper with `GET /api/health` returning `HTTP 200 {"status":"ok"}` and `/api/sessions` returning the expected app-level admin-auth `HTTP 401`.
 
 Recommended next slice:
 
-1. Configure a Vercel preview with server-side `DATA_STORE_PROVIDER=convex`, `ATTACHMENT_STORE_PROVIDER=convex`, `CONVEX_URL`, `ADMIN_PASSWORD`, and only the server secrets needed for routes under test.
-2. Run `npm run lint` and `npm run build`.
-3. Deploy a preview and smoke `GET /api/health` on the same-origin Vercel URL.
-4. Run provider, attachment, brief-from-uploads, and export smokes against the Vercel preview origin.
-5. Classify failures as Vercel API wrapper, Convex provider, existing auth/session persistence, or deferred extraction-runtime issues.
-6. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
+1. Obtain a reusable Vercel Deployment Protection bypass for script-based preview smokes, either via `x-vercel-protection-bypass`, a reusable browser cookie, or a temporary protection exception.
+2. Run provider, attachment, and export smokes against `https://sqd-hdsmq3b8g-the-shapers-projects.vercel.app` with `SMOKE_REQUEST_COOKIE` or the equivalent bypass header path.
+3. Add `brief-from-uploads` smoke coverage only after deciding whether Phase 6 extraction should run inside Vercel Functions or move to a separate extraction adapter.
+4. Classify failures as Vercel API wrapper, Convex provider, existing auth/session persistence, Deployment Protection access, or deferred extraction-runtime issues.
+5. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
 
 Checks for that slice:
 
@@ -146,6 +147,7 @@ Checks for that slice:
 - `npm run build`
 - Local SQLite smoke for provider/API behavior.
 - Convex provider smoke with `DATA_STORE_PROVIDER=convex` after SQLite imports are no longer loaded on Convex paths.
+- Vercel preview health: `npx vercel@latest curl -i https://sqd-hdsmq3b8g-the-shapers-projects.vercel.app/api/health`.
 
 Stop before:
 

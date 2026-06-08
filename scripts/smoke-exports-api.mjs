@@ -5,6 +5,7 @@ const baseUrl = (process.env.API_BASE_URL || "http://localhost:3107").replace(/\
 const adminPassword = process.env.ADMIN_PASSWORD || "shazam!";
 const expectedRelativePathPrefix = process.env.EXPECT_ATTACHMENT_RELATIVE_PATH_PREFIX || "";
 const useDirectUpload = process.env.SMOKE_DIRECT_ATTACHMENT_UPLOAD === "1";
+const smokeRequestCookie = process.env.SMOKE_REQUEST_COOKIE || "";
 
 const createdSessionIds = [];
 let adminSessionId = "";
@@ -21,6 +22,7 @@ async function request(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       ...(adminSessionId ? { "x-admin-session": adminSessionId } : {}),
+      ...(smokeRequestCookie ? { Cookie: smokeRequestCookie } : {}),
       ...(options.headers || {}),
     },
   });
@@ -80,7 +82,11 @@ async function uploadAttachment(sessionId, name, mimeType, text) {
 }
 
 async function fetchExport(sessionId, kind) {
-  const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/export/${kind}`);
+  const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/export/${kind}`, {
+    headers: {
+      ...(smokeRequestCookie ? { Cookie: smokeRequestCookie } : {}),
+    },
+  });
   if (!response.ok) {
     throw new Error(`GET /export/${kind} failed (${response.status}): ${await response.text()}`);
   }

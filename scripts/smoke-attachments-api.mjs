@@ -6,6 +6,7 @@ const adminPassword = process.env.ADMIN_PASSWORD || "shazam!";
 const expectedRelativePathPrefix = process.env.EXPECT_ATTACHMENT_RELATIVE_PATH_PREFIX || "";
 const smokeDirectUpload = process.env.SMOKE_DIRECT_ATTACHMENT_UPLOAD === "1";
 const smokeArchiveRoundtrip = process.env.SMOKE_ATTACHMENT_ARCHIVE_ROUNDTRIP === "1";
+const smokeRequestCookie = process.env.SMOKE_REQUEST_COOKIE || "";
 
 const createdSessionIds = [];
 let adminSessionId = "";
@@ -22,6 +23,7 @@ async function request(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       ...(adminSessionId ? { "x-admin-session": adminSessionId } : {}),
+      ...(smokeRequestCookie ? { Cookie: smokeRequestCookie } : {}),
       ...(options.headers || {}),
     },
   });
@@ -84,7 +86,11 @@ async function smokeArchiveRoundtripForSession(sessionId, attachmentId) {
     }),
   });
 
-  const exportResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/export/zip`);
+  const exportResponse = await fetch(`${baseUrl}/api/sessions/${sessionId}/export/zip`, {
+    headers: {
+      ...(smokeRequestCookie ? { Cookie: smokeRequestCookie } : {}),
+    },
+  });
   if (!exportResponse.ok) {
     throw new Error(`ZIP export failed (${exportResponse.status}): ${await exportResponse.text()}`);
   }

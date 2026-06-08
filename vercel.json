@@ -3,10 +3,16 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "buildCommand": "node scripts/build-vercel-api.mjs && npm run build",
+  "functions": {
+    "api/[...].js": {
+      "includeFiles": "{scripts/**,data/sessions.db,node_modules/better-sqlite3/**}"
+    }
+  },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "source": "/api/:path*",
+      "destination": "/api/[...]"
     },
     {
       "source": "/(.*)",
