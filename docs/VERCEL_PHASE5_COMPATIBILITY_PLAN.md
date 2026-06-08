@@ -18,7 +18,7 @@ The goal is to keep the current Vite app behavior intact while preparing a minim
 | Surface | Current repo shape | Phase 5 implication |
 | --- | --- | --- |
 | Frontend | Vite build output in `dist/`; currently deployable as static SPA assets. | `vercel.json` now configures Vite frontend preview hosting and SPA fallback rewrites. |
-| Compatibility API | Express app in `server.ts`; API routes are registered before static/Vite middleware. | Keep on the existing backend host for the first Vercel frontend preview; add a Vercel-compatible entry point only after approval. |
+| Compatibility API | Express app factory in `server.ts`; `api/[...path].ts` wraps it for Vercel `/api/*` compatibility. | Keep on the existing backend host until the Vercel API wrapper is deployed with server-side env vars and smoke-tested. |
 | Persistence | `DATA_STORE_PROVIDER=sqlite` fallback and `DATA_STORE_PROVIDER=convex` provider seam. | Vercel-hosted API should use `DATA_STORE_PROVIDER=convex`; SQLite is not durable on serverless hosts. |
 | Attachment storage | `ATTACHMENT_STORE_PROVIDER=local` fallback and `ATTACHMENT_STORE_PROVIDER=convex` provider seam. | Vercel-hosted API should use `ATTACHMENT_STORE_PROVIDER=convex`; local files are not durable on serverless hosts. |
 | Document extraction | `src/server/documents.ts` shells out to `scripts/extract_attachment.py`. | This is the largest Vercel serverless blocker and remains a Phase 6 extraction decision. |
@@ -107,7 +107,7 @@ After human approval for Vercel deployment assumptions:
    - `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 npm run smoke:brief-from-uploads`
    - `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 npm run smoke:exports-api`
 7. Document any failed route with whether it is a frontend hosting issue, existing backend issue, Convex provider issue, or the already-deferred extraction decision.
-8. Only after the frontend preview is verified, split `server.ts` into a reusable app factory and add a Vercel-compatible compatibility API entry point.
+8. Only after the frontend preview is verified, split `server.ts` into a reusable app factory and add a Vercel-compatible compatibility API entry point. Completed in repo; deployment and smoke verification remain pending.
 
 ## Current Recommendation
 
@@ -115,22 +115,30 @@ Do not lift-and-shift the full Express/Python backend to Vercel as the first Ver
 
 The frontend preview now exists at `https://sqd-bbp.vercel.app`, but the configured Cloud Run backend origin is stale relative to this migration branch. Treat Cloud Run as a legacy compatibility bridge only, not the active migration target.
 
-The safest next implementation slice is to prepare the Vercel/Convex compatibility API path by removing serverless blockers from the backend entry point. Do not make `gcloud`/Cloud Run redeploy the recommended path unless a human explicitly approves it as a temporary emergency bridge.
+The Vercel/Convex compatibility API entry point now exists in repo. Do not make `gcloud`/Cloud Run redeploy the recommended path unless a human explicitly approves it as a temporary emergency bridge.
 
 ## Next Agent Handoff
 
-Goal: make a future Vercel compatibility API feasible without changing the public `/api/*` contract, removing SQLite/local fallback, or changing extraction behavior.
+Goal: verify the Vercel compatibility API in a preview deployment without changing the public `/api/*` contract, removing SQLite/local fallback, or changing extraction behavior.
 
-Recommended first slice:
+Completed prep:
 
 1. Split `server.ts` into a reusable Express app factory and local `listen()` bootstrap.
-2. Keep route registration order, request shapes, response shapes, and auth checks unchanged.
-3. Move the Vite dev-server import into a dev-only dynamic import so API-only imports do not pull Vite.
-4. Move shared session id/password helpers out of SQLite-backed `src/server/sessions.ts`.
-5. Update Convex data stores to import those DB-free helpers.
-6. Remove eager SQLite/native imports from Convex provider paths, likely by isolating local SQLite stores behind lazy imports or separate local-only modules.
-7. Inventory the SQLite-backed admin session provider as the next blocker; do not change auth semantics without explicit approval.
-8. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
+2. Kept route registration order, request shapes, response shapes, and auth checks unchanged.
+3. Moved the Vite dev-server import into a dev-only dynamic import so API-only imports do not pull Vite.
+4. Moved shared session id/password helpers out of SQLite-backed `src/server/sessions.ts`.
+5. Updated Convex data stores to import those DB-free helpers.
+6. Removed eager SQLite/native imports from Convex data-provider paths by lazy-loading local SQLite stores.
+7. Added `api/[...path].ts` as the thin Vercel wrapper around `createApp()`.
+
+Recommended next slice:
+
+1. Configure a Vercel preview with server-side `DATA_STORE_PROVIDER=convex`, `ATTACHMENT_STORE_PROVIDER=convex`, `CONVEX_URL`, `ADMIN_PASSWORD`, and only the server secrets needed for routes under test.
+2. Run `npm run lint` and `npm run build`.
+3. Deploy a preview and smoke `GET /api/health` on the same-origin Vercel URL.
+4. Run provider, attachment, brief-from-uploads, and export smokes against the Vercel preview origin.
+5. Classify failures as Vercel API wrapper, Convex provider, existing auth/session persistence, or deferred extraction-runtime issues.
+6. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
 
 Checks for that slice:
 

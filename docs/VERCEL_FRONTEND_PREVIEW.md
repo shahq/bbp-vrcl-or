@@ -1,8 +1,8 @@
 # Vercel Frontend Preview
 
-This is the first approved Phase 5 Vercel slice: frontend preview hosting only.
+This began as the first approved Phase 5 Vercel slice: frontend preview hosting only.
 
-It does not move the Express `/api/*` backend to Vercel. The preview build must call the existing backend origin through `VITE_API_BASE_URL`.
+The repo now includes a thin same-origin Vercel `/api/*` compatibility wrapper, but the live preview should still be treated as frontend-only until a preview deployment is intentionally configured with server-side provider environment variables and smoke-tested.
 
 ## Current Vercel Project
 
@@ -27,7 +27,7 @@ Use these settings for the preview project:
 | Output directory | `dist` |
 | Install command | Vercel default or `npm install` |
 
-The checked-in `vercel.json` records the Vite build command, output directory, and SPA fallback rewrite for client-side routes.
+The checked-in `vercel.json` records the Vite build command, output directory, API rewrite, and SPA fallback rewrite for client-side routes.
 
 ## Preview Environment Variables
 
@@ -40,6 +40,16 @@ Set these as Vercel Preview environment variables in the Vercel dashboard or CLI
 | `VITE_PARTYKIT_PARTY` | `main` | Existing PartyKit party name. |
 
 Do not add AI keys, admin passwords, Convex server URLs, or PartyKit admin secrets to the frontend-only Vercel project unless a later slice adds a server-side API runtime there.
+
+When the same-origin compatibility API is intentionally deployed, configure these as server-side Vercel environment variables rather than browser variables:
+
+- `DATA_STORE_PROVIDER=convex`
+- `ATTACHMENT_STORE_PROVIDER=convex`
+- `ADMIN_AUTH_PROVIDER=password`
+- `CONVEX_URL`
+- `ADMIN_PASSWORD`
+- `AI_PROVIDER` and the matching server-side AI key, if AI routes will be smoke-tested
+- `PARTYKIT_ADMIN_SECRET` and `PARTYKIT_HOST`, if admin PartyKit token routes will be smoke-tested
 
 ## Local Verification
 
@@ -78,8 +88,7 @@ API_BASE_URL=<backend-origin> ADMIN_PASSWORD=<admin-password> SMOKE_DIRECT_ATTAC
 
 ## Deferred
 
-- Same-origin `/api/*` on Vercel.
-- Express app factory / Vercel API wrapper.
+- Deploying and smoke-testing same-origin `/api/*` on Vercel.
 - Serverless-clean Convex provider imports.
 - Admin session persistence outside SQLite.
 - Production Vercel deployment.
