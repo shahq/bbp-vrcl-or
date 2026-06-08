@@ -1,12 +1,4 @@
-import * as cards from "../cards";
-import * as connections from "../connections";
-import {
-  deleteNote,
-  readNotes,
-  replaceNotes,
-  upsertNote,
-} from "../notes";
-import * as sessions from "../sessions";
+import { generateSessionId } from "../session-core";
 import {
   convexCardStore,
   convexConnectionStore,
@@ -20,43 +12,44 @@ function getDataStoreProvider() {
 }
 
 const sqliteSessionStore: SessionStore = {
-  generateSessionId: sessions.generateSessionId,
-  createSession: async (...args) => sessions.createSession(...args),
-  getSession: async (...args) => sessions.getSession(...args),
-  getAllSessions: async () => sessions.getAllSessions(),
-  updateSession: async (...args) => sessions.updateSession(...args),
-  updateSessionPassword: async (...args) => sessions.updateSessionPassword(...args),
-  archiveSession: async (...args) => sessions.archiveSession(...args),
-  deleteSession: async (...args) => sessions.deleteSession(...args),
-  verifySessionPassword: async (...args) => sessions.verifySessionPassword(...args),
-  completeOnboarding: async (...args) => sessions.completeOnboarding(...args),
-  isSessionOpen: async (...args) => sessions.isSessionOpen(...args),
+  generateSessionId,
+  createSession: async (...args) => (await import("../sessions")).createSession(...args),
+  getSession: async (...args) => (await import("../sessions")).getSession(...args),
+  getAllSessions: async () => (await import("../sessions")).getAllSessions(),
+  updateSession: async (...args) => (await import("../sessions")).updateSession(...args),
+  updateSessionPassword: async (...args) => (await import("../sessions")).updateSessionPassword(...args),
+  archiveSession: async (...args) => (await import("../sessions")).archiveSession(...args),
+  deleteSession: async (...args) => (await import("../sessions")).deleteSession(...args),
+  verifySessionPassword: async (...args) => (await import("../sessions")).verifySessionPassword(...args),
+  completeOnboarding: async (...args) => (await import("../sessions")).completeOnboarding(...args),
+  isSessionOpen: async (...args) => (await import("../sessions")).isSessionOpen(...args),
 };
 
 const sqliteCardStore: CardStore = {
-  getCardsBySession: async (...args) => cards.getCardsBySession(...args),
-  getNextOrderIndex: async (...args) => cards.getNextOrderIndex(...args),
-  createCard: async (...args) => cards.createCard(...args),
-  updateCard: async (_sessionId, cardId, updates, newContent) => cards.updateCard(cardId, updates, newContent),
-  deleteCard: async (_sessionId, cardId) => cards.deleteCard(cardId),
-  reorderCards: async (...args) => cards.reorderCards(...args),
+  getCardsBySession: async (...args) => (await import("../cards")).getCardsBySession(...args),
+  getNextOrderIndex: async (...args) => (await import("../cards")).getNextOrderIndex(...args),
+  createCard: async (...args) => (await import("../cards")).createCard(...args),
+  updateCard: async (_sessionId, cardId, updates, newContent) =>
+    (await import("../cards")).updateCard(cardId, updates, newContent),
+  deleteCard: async (_sessionId, cardId) => (await import("../cards")).deleteCard(cardId),
+  reorderCards: async (...args) => (await import("../cards")).reorderCards(...args),
 };
 
 const sqliteConnectionStore: ConnectionStore = {
-  getConnectionsBySession: async (...args) => connections.getConnectionsBySession(...args),
-  createConnection: async (...args) => connections.createConnection(...args),
-  deleteConnection: async (id) => connections.deleteConnection(id),
-  deleteConnectionsForCard: async (cardId) => connections.deleteConnectionsForCard(cardId),
+  getConnectionsBySession: async (...args) => (await import("../connections")).getConnectionsBySession(...args),
+  createConnection: async (...args) => (await import("../connections")).createConnection(...args),
+  deleteConnection: async (id) => (await import("../connections")).deleteConnection(id),
+  deleteConnectionsForCard: async (cardId) => (await import("../connections")).deleteConnectionsForCard(cardId),
   saveAllConnections: async (...args) => {
-    connections.saveAllConnections(...args);
+    (await import("../connections")).saveAllConnections(...args);
   },
 };
 
 const localNoteStore: NoteStore = {
-  listNotes: async (...args) => readNotes(...args),
-  upsertNote: async (...args) => upsertNote(...args),
-  deleteNote: async (...args) => deleteNote(...args),
-  replaceNotes: async (...args) => replaceNotes(...args),
+  listNotes: async (...args) => (await import("../notes")).readNotes(...args),
+  upsertNote: async (...args) => (await import("../notes")).upsertNote(...args),
+  deleteNote: async (...args) => (await import("../notes")).deleteNote(...args),
+  replaceNotes: async (...args) => (await import("../notes")).replaceNotes(...args),
 };
 
 export function getSessionStore(): SessionStore {

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import type { Card } from "../cards";
 import type { Connection } from "../connections";
-import type { CreateSessionOptions, CreateSessionResult, Session } from "../sessions";
+import type { CreateSessionOptions, CreateSessionResult, Session } from "../session-core";
 import type { SessionNote } from "../../types";
 import type { TimerControlMode } from "../../config/timer";
 
@@ -104,6 +104,10 @@ export interface AttachmentFileWriteResult {
   cleanup?: () => Promise<void> | void;
 }
 
+export interface AttachmentDirectUploadTarget {
+  uploadUrl: string;
+}
+
 export interface AttachmentStore {
   listAttachments<T>(sessionId: string): Promise<T[]>;
   saveAttachment<T extends { id: string }>(sessionId: string, attachment: T): Promise<void>;
@@ -121,6 +125,23 @@ export interface AttachmentStore {
     fileName: string,
     content: Buffer,
     mimeType?: string
+  ): Promise<AttachmentFileWriteResult>;
+  writeAttachmentArchiveFile(
+    sessionId: string,
+    archiveFileName: string,
+    content: Buffer,
+    mimeType?: string
+  ): Promise<Pick<AttachmentFileWriteResult, "relativePath">>;
+  replaceAllSessionAttachments<T extends { id: string }>(sessionId: string, attachments: T[]): Promise<void>;
+  createDirectUploadTarget?(
+    sessionId: string,
+    fileName: string,
+    mimeType?: string
+  ): Promise<AttachmentDirectUploadTarget>;
+  prepareDirectUploadedFile?(
+    sessionId: string,
+    fileName: string,
+    storageId: string
   ): Promise<AttachmentFileWriteResult>;
   readAttachmentFile(sessionId: string, attachmentPath: string): Promise<Buffer>;
   deleteAllSessionAttachments(sessionId: string): Promise<void>;

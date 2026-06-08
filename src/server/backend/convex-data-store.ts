@@ -15,7 +15,7 @@ import {
   type CreateSessionOptions,
   type CreateSessionResult,
   type Session,
-} from "../sessions";
+} from "../session-core";
 import type { SessionNote } from "../../types";
 import type { CardStore, ConnectionStore, NoteStore, SessionStore } from "./types";
 

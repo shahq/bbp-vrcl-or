@@ -76,6 +76,23 @@ export function writeAttachmentFile(
   };
 }
 
+export function writeAttachmentArchiveFile(
+  sessionId: string,
+  fileName: string,
+  content: Buffer
+): { relativePath: string; fullPath: string } {
+  const attachmentsDir = getAttachmentsDir(sessionId);
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_') || 'attachment.bin';
+  const fullPath = path.join(attachmentsDir, safeName);
+
+  fs.writeFileSync(fullPath, content);
+
+  return {
+    relativePath: path.relative(process.cwd(), fullPath),
+    fullPath,
+  };
+}
+
 export function readAttachmentsIndex<T>(sessionId: string): T[] {
   const filePath = path.join(getSessionDir(sessionId), ATTACHMENTS_INDEX_FILE);
   if (!fs.existsSync(filePath)) {

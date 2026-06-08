@@ -57,6 +57,14 @@ const localAttachmentStore: AttachmentStore = {
     return localFiles.writeAttachmentFile(sessionId, fileName, content);
   },
 
+  async writeAttachmentArchiveFile(sessionId: string, fileName: string, content: Buffer) {
+    return localFiles.writeAttachmentArchiveFile(sessionId, fileName, content);
+  },
+
+  async replaceAllSessionAttachments<T extends { id: string }>(sessionId: string, attachments: T[]) {
+    localFiles.writeAttachmentsIndex(sessionId, attachments);
+  },
+
   async readAttachmentFile(_sessionId: string, attachmentPath: string) {
     const fullPath = path.isAbsolute(attachmentPath)
       ? attachmentPath
@@ -65,13 +73,9 @@ const localAttachmentStore: AttachmentStore = {
   },
 
   async deleteAllSessionAttachments(sessionId: string) {
-    const attachments = localFiles.readAttachmentsIndex<{ relativePath: string }>(sessionId);
-    attachments.forEach((attachment) => {
-      const fullPath = path.join(process.cwd(), attachment.relativePath);
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
-      }
-    });
+    const attachmentsDir = localFiles.getAttachmentsDir(sessionId);
+    fs.rmSync(attachmentsDir, { recursive: true, force: true });
+    fs.mkdirSync(attachmentsDir, { recursive: true });
     localFiles.writeAttachmentsIndex(sessionId, []);
   },
 };
@@ -118,6 +122,10 @@ function getStorageId(relativePath: string) {
     : "";
 }
 
+function safeAttachmentFileName(fileName: string) {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_") || "upload.bin";
+}
+
 async function runQuery<Result>(ref: any, args: Record<string, unknown>): Promise<Result> {
   return await getConvexClient().query(ref, stripUndefined(args));
 }
@@ -147,6 +155,17 @@ async function uploadToConvexStorage(fileName: string, content: Buffer, mimeType
   }
 
   return data.storageId;
+}
+
+async function writeTempAttachmentFile(fileName: string, content: Buffer) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bbp-attachment-"));
+  const fullPath = path.join(tempDir, safeAttachmentFileName(fileName));
+  fs.writeFileSync(fullPath, content);
+
+  return {
+    fullPath,
+    cleanup: () => fs.rmSync(tempDir, { recursive: true, force: true }),
+  };
 }
 
 const convexAttachmentStore: AttachmentStore = {
@@ -182,15 +201,40 @@ const convexAttachmentStore: AttachmentStore = {
 
   async writeAttachmentFile(_sessionId: string, fileName: string, content: Buffer, mimeType?: string) {
     const storageId = await uploadToConvexStorage(fileName, content, mimeType);
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bbp-attachment-"));
-    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const fullPath = path.join(tempDir, safeName || "upload.bin");
-    fs.writeFileSync(fullPath, content);
+    const tempFile = await writeTempAttachmentFile(fileName, content);
 
     return {
       relativePath: `convex-storage://${storageId}`,
-      fullPath,
-      cleanup: () => fs.rmSync(tempDir, { recursive: true, force: true }),
+      ...tempFile,
+    };
+  },
+
+  async writeAttachmentArchiveFile(_sessionId: string, fileName: string, content: Buffer, mimeType?: string) {
+    const storageId = await uploadToConvexStorage(fileName, content, mimeType);
+    return {
+      relativePath: `convex-storage://${storageId}`,
+    };
+  },
+
+  async replaceAllSessionAttachments<T extends { id: string }>(sessionId: string, attachments: T[]) {
+    await this.deleteAllSessionAttachments(sessionId);
+    for (const attachment of attachments) {
+      await this.saveAttachment(sessionId, attachment);
+    }
+  },
+
+  async createDirectUploadTarget() {
+    return {
+      uploadUrl: await runMutation<string>(convexAttachmentRefs.generateUploadUrl, {}),
+    };
+  },
+
+  async prepareDirectUploadedFile(_sessionId: string, fileName: string, storageId: string) {
+    const content = await this.readAttachmentFile(_sessionId, `convex-storage://${storageId}`);
+    const tempFile = await writeTempAttachmentFile(fileName, content);
+    return {
+      relativePath: `convex-storage://${storageId}`,
+      ...tempFile,
     };
   },
 

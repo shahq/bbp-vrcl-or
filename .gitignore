@@ -7,5 +7,6 @@ coverage/
 .env*
 !.env.example
 .firebase/
+.vercel
 data/sessions.db
 data/sessions/
