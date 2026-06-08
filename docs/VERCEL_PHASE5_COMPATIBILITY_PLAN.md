@@ -72,6 +72,20 @@ Server-only variables:
 
 Vite no longer injects AI provider keys into the browser bundle. Keep all AI keys server-side in Vercel environment variables.
 
+## AI Preview Testing
+
+The current Vercel Preview compatibility smokes verify health, Convex-backed provider routes, Convex attachment storage, and exports. They do not exercise `/api/ai/*`.
+
+Minimum viable AI testing requires one server-side AI provider key in Vercel Preview:
+
+- For the current default path, set `OPENCODE_API_KEY`, keep `AI_PROVIDER=opencode`, and keep `AI_DEFAULT_MODEL=minimax-m2.5`.
+- For an OpenRouter-first smoke, set `OPENROUTER_API_KEY`, use `AI_PROVIDER=openrouter`, and use an OpenRouter model such as `openrouter/auto`.
+- For a Google/Gemini smoke, set either `GOOGLE_API_KEY` or `GEMINI_API_KEY`, use `AI_PROVIDER=google`, and use a Gemini model.
+
+Do not put these keys in browser variables or committed files. Add them only as server-side Vercel environment variables.
+
+Follow-up reminder: consolidate AI routing behind a handoff-friendly AI gateway seam that can support OpenRouter, Opencode, OpenAI, Anthropic Claude, and Google without scattering vendor assumptions through product logic. Keep this as a separate provider-seam slice after the basic Vercel/Convex runtime is stable.
+
 ## Vercel Blockers And Decisions
 
 1. **Express entry point**
