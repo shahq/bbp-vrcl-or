@@ -145,6 +145,10 @@ Completed prep:
 17. Persisted the verified Preview env choices on 2026-06-08: `ADMIN_AUTH_PROVIDER=stateless` and `SESSION_FILE_STORE_PROVIDER=none`. The existing auth env was updated through Vercel CLI; the new session file env required Vercel REST API `upsert=true` because this project has no connected Git repository and the CLI refused the all-preview add path with `git_branch_required`.
 18. Deployed fresh preview `https://sqd-jqenslwjn-the-shapers-projects.vercel.app` without deployment-level env overrides.
 19. Verified protected-preview compatibility smokes on `https://sqd-jqenslwjn-the-shapers-projects.vercel.app` using a temporary Vercel share-link cookie: `GET /api/health` returned `HTTP 200 {"status":"ok"}`; `npm run smoke:provider-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 SMOKE_ATTACHMENT_ARCHIVE_ROUNDTRIP=1 npm run smoke:attachments-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 npm run smoke:exports-api` passed.
+20. Fixed a browser admin-login failure on that preview: `POST /api/admin/login` returned `HTTP 401` for the user-entered password because the encrypted Preview `ADMIN_PASSWORD` value contained one accidental trailing newline. The Preview secret was updated to the same value without trailing whitespace.
+21. Deployed fresh preview `https://sqd-hcxm5wv8e-the-shapers-projects.vercel.app` after password normalization.
+22. Verified browser-style admin login on `https://sqd-hcxm5wv8e-the-shapers-projects.vercel.app` using the normal trimmed password: `POST /api/admin/login` returned `HTTP 200` with `sessionId` and `expiresAt`.
+23. Re-verified protected-preview compatibility smokes on `https://sqd-hcxm5wv8e-the-shapers-projects.vercel.app` using a temporary Vercel share-link cookie: `GET /api/health` returned `HTTP 200 {"status":"ok"}`; `npm run smoke:provider-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 SMOKE_ATTACHMENT_ARCHIVE_ROUNDTRIP=1 npm run smoke:attachments-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 npm run smoke:exports-api` passed.
 
 Recommended next slice:
 
