@@ -142,15 +142,17 @@ Completed prep:
 14. Added `SESSION_FILE_STORE_PROVIDER=none`; Vercel + Convex mode defaults to no-op session metadata file writes while local fallback keeps `SESSION_FILE_STORE_PROVIDER=local`.
 15. Deployed preview `https://sqd-j3h25tygw-the-shapers-projects.vercel.app` with runtime overrides `ADMIN_AUTH_PROVIDER=stateless` and `SESSION_FILE_STORE_PROVIDER=none`.
 16. Verified protected-preview compatibility smokes on `https://sqd-j3h25tygw-the-shapers-projects.vercel.app` using a temporary Vercel share-link cookie: health passed; provider smoke passed; attachments smoke passed with direct upload and archive roundtrip; exports smoke passed with direct upload.
+17. Persisted the verified Preview env choices on 2026-06-08: `ADMIN_AUTH_PROVIDER=stateless` and `SESSION_FILE_STORE_PROVIDER=none`. The existing auth env was updated through Vercel CLI; the new session file env required Vercel REST API `upsert=true` because this project has no connected Git repository and the CLI refused the all-preview add path with `git_branch_required`.
+18. Deployed fresh preview `https://sqd-jqenslwjn-the-shapers-projects.vercel.app` without deployment-level env overrides.
+19. Verified protected-preview compatibility smokes on `https://sqd-jqenslwjn-the-shapers-projects.vercel.app` using a temporary Vercel share-link cookie: `GET /api/health` returned `HTTP 200 {"status":"ok"}`; `npm run smoke:provider-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 SMOKE_ATTACHMENT_ARCHIVE_ROUNDTRIP=1 npm run smoke:attachments-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 npm run smoke:exports-api` passed.
 
 Recommended next slice:
 
-1. Persist the verified preview env choices so future previews do not need deployment-level overrides: `ADMIN_AUTH_PROVIDER=stateless` and `SESSION_FILE_STORE_PROVIDER=none`.
-2. Refactor `src/server/auth/index.ts` so stateless Vercel mode no longer statically imports the SQLite-backed password provider.
-3. Remove `better-sqlite3` from the Vercel function include path after the static import is gone and verify the API bundle still builds.
-4. Rerun provider, attachment, and export smokes against the protected preview with `SMOKE_REQUEST_COOKIE` or `x-vercel-protection-bypass`.
-5. Add `brief-from-uploads` smoke coverage only after deciding whether Phase 6 extraction should run inside Vercel Functions or move to a separate extraction adapter.
-6. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
+1. Refactor `src/server/auth/index.ts` so stateless Vercel mode no longer statically imports the SQLite-backed password provider.
+2. Remove `better-sqlite3` from the Vercel function include path after the static import is gone and verify the API bundle still builds.
+3. Rerun provider, attachment, and export smokes against the protected preview with `SMOKE_REQUEST_COOKIE` or `x-vercel-protection-bypass`.
+4. Add `brief-from-uploads` smoke coverage only after deciding whether Phase 6 extraction should run inside Vercel Functions or move to a separate extraction adapter.
+5. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
 
 Checks for that slice:
 
