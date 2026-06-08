@@ -7,6 +7,12 @@ import {
   upsertNote,
 } from "../notes";
 import * as sessions from "../sessions";
+import {
+  convexCardStore,
+  convexSessionStore,
+  unsupportedConvexConnectionStore,
+  unsupportedConvexNoteStore,
+} from "./convex-data-store";
 import type { CardStore, ConnectionStore, NoteStore, SessionStore } from "./types";
 
 function getDataStoreProvider() {
@@ -58,6 +64,8 @@ export function getSessionStore(): SessionStore {
   switch (provider) {
     case "sqlite":
       return sqliteSessionStore;
+    case "convex":
+      return convexSessionStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }
@@ -68,6 +76,8 @@ export function getCardStore(): CardStore {
   switch (provider) {
     case "sqlite":
       return sqliteCardStore;
+    case "convex":
+      return convexCardStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }
@@ -78,6 +88,8 @@ export function getConnectionStore(): ConnectionStore {
   switch (provider) {
     case "sqlite":
       return sqliteConnectionStore;
+    case "convex":
+      return unsupportedConvexConnectionStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }
@@ -88,6 +100,8 @@ export function getNoteStore(): NoteStore {
   switch (provider) {
     case "sqlite":
       return localNoteStore;
+    case "convex":
+      return unsupportedConvexNoteStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }
