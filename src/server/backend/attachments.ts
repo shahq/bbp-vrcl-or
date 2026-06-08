@@ -1,5 +1,8 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
+import { ConvexHttpClient } from "convex/browser";
+import { makeFunctionReference } from "convex/server";
 import * as localFiles from "../files";
 import type { AttachmentStore } from "./types";
 
@@ -73,11 +76,158 @@ const localAttachmentStore: AttachmentStore = {
   },
 };
 
+const convexAttachmentRefs = {
+  generateUploadUrl: makeFunctionReference("attachments:generateUploadUrl"),
+  getFileUrl: makeFunctionReference("attachments:getFileUrl"),
+  listBySession: makeFunctionReference("attachments:listBySession"),
+  save: makeFunctionReference("attachments:save"),
+  remove: makeFunctionReference("attachments:remove"),
+  removeAllForSession: makeFunctionReference("attachments:removeAllForSession"),
+};
+
+function getConvexUrl() {
+  return process.env.CONVEX_URL || process.env.VITE_CONVEX_URL || "";
+}
+
+function getConvexClient() {
+  const url = getConvexUrl();
+  if (!url) {
+    throw new Error("ATTACHMENT_STORE_PROVIDER=convex requires CONVEX_URL or VITE_CONVEX_URL.");
+  }
+
+  return new ConvexHttpClient(url);
+}
+
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(stripUndefined) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, child]) =>
+        child === undefined ? [] : [[key, stripUndefined(child)]]
+      )
+    ) as T;
+  }
+  return value;
+}
+
+function getStorageId(relativePath: string) {
+  return relativePath.startsWith("convex-storage://")
+    ? relativePath.slice("convex-storage://".length)
+    : "";
+}
+
+async function runQuery<Result>(ref: any, args: Record<string, unknown>): Promise<Result> {
+  return await getConvexClient().query(ref, stripUndefined(args));
+}
+
+async function runMutation<Result>(ref: any, args: Record<string, unknown>): Promise<Result> {
+  return await getConvexClient().mutation(ref, stripUndefined(args));
+}
+
+async function uploadToConvexStorage(fileName: string, content: Buffer, mimeType?: string) {
+  const uploadUrl = await runMutation<string>(convexAttachmentRefs.generateUploadUrl, {});
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": mimeType || "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${fileName.replace(/"/g, "_")}"`,
+    },
+    body: content as any,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Convex attachment upload failed (${response.status})`);
+  }
+
+  const data = await response.json() as { storageId?: string };
+  if (!data.storageId) {
+    throw new Error("Convex attachment upload did not return storageId.");
+  }
+
+  return data.storageId;
+}
+
+const convexAttachmentStore: AttachmentStore = {
+  async listAttachments<T>(sessionId: string) {
+    return await runQuery<T[]>(convexAttachmentRefs.listBySession, { sessionId });
+  },
+
+  async saveAttachment<T extends { id: string }>(sessionId: string, attachment: T) {
+    const payload = {
+      ...(attachment as Record<string, unknown>),
+      storageId: getStorageId(String((attachment as any).relativePath || "")) || undefined,
+    };
+    await runMutation(convexAttachmentRefs.save, { sessionId, attachment: payload });
+  },
+
+  async updateAttachment<T extends { id: string }>(
+    sessionId: string,
+    attachmentId: string,
+    updater: (attachment: T) => T
+  ) {
+    const attachments = await this.listAttachments(sessionId) as T[];
+    const current = attachments.find((item) => item.id === attachmentId);
+    if (!current) return null;
+
+    const next = updater(current);
+    await this.saveAttachment(sessionId, next);
+    return next;
+  },
+
+  async deleteAttachment<T extends { id: string; relativePath: string }>(sessionId: string, attachmentId: string) {
+    return await runMutation<T | null>(convexAttachmentRefs.remove, { sessionId, attachmentId });
+  },
+
+  async writeAttachmentFile(_sessionId: string, fileName: string, content: Buffer, mimeType?: string) {
+    const storageId = await uploadToConvexStorage(fileName, content, mimeType);
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bbp-attachment-"));
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fullPath = path.join(tempDir, safeName || "upload.bin");
+    fs.writeFileSync(fullPath, content);
+
+    return {
+      relativePath: `convex-storage://${storageId}`,
+      fullPath,
+      cleanup: () => fs.rmSync(tempDir, { recursive: true, force: true }),
+    };
+  },
+
+  async readAttachmentFile(_sessionId: string, attachmentPath: string) {
+    const storageId = getStorageId(attachmentPath);
+    if (!storageId) {
+      const fullPath = path.isAbsolute(attachmentPath)
+        ? attachmentPath
+        : path.join(process.cwd(), attachmentPath);
+      return fs.readFileSync(fullPath);
+    }
+
+    const url = await runQuery<string | null>(convexAttachmentRefs.getFileUrl, { storageId });
+    if (!url) {
+      throw new Error("Convex attachment file is not available.");
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Convex attachment download failed (${response.status})`);
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  },
+
+  async deleteAllSessionAttachments(sessionId: string) {
+    await runMutation(convexAttachmentRefs.removeAllForSession, { sessionId });
+  },
+};
+
 export function getAttachmentStore(): AttachmentStore {
   const provider = getAttachmentStoreProvider();
   switch (provider) {
     case "local":
       return localAttachmentStore;
+    case "convex":
+      return convexAttachmentStore;
     default:
       throw new Error(`Unsupported ATTACHMENT_STORE_PROVIDER: ${provider}`);
   }

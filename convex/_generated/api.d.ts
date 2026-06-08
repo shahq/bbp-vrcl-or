@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as attachments from "../attachments.js";
 import type * as cards from "../cards.js";
 import type * as connections from "../connections.js";
 import type * as notes from "../notes.js";
@@ -20,6 +21,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  attachments: typeof attachments;
   cards: typeof cards;
   connections: typeof connections;
   notes: typeof notes;
