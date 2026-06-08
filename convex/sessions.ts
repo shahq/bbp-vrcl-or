@@ -118,6 +118,28 @@ export const remove = mutationGeneric({
   handler: async (ctx, args) => {
     const doc = await getSessionDoc(ctx, args.sessionId);
     if (!doc) return false;
+
+    const cards = await ctx.db
+      .query("cards")
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
+      .collect();
+    const connections = await ctx.db
+      .query("connections")
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
+      .collect();
+    const notes = await ctx.db
+      .query("notes")
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
+      .collect();
+    const attachments = await ctx.db
+      .query("attachments")
+      .withIndex("by_session", (q: any) => q.eq("sessionId", args.sessionId))
+      .collect();
+
+    for (const childDoc of [...cards, ...connections, ...notes, ...attachments]) {
+      await ctx.db.delete(childDoc._id);
+    }
+
     await ctx.db.delete(doc._id);
     return true;
   },
