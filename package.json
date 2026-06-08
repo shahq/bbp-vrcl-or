@@ -12,6 +12,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "start": "node --import tsx server.ts",
+    "smoke:provider-api": "node scripts/smoke-provider-api.mjs",
     "partykit:dev": "partykit dev --config partykit.json --port 1999",
     "partykit:deploy": "partykit deploy",
     "convex:dev": "convex dev",

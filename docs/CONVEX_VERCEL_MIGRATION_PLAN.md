@@ -49,9 +49,9 @@ The Firebase migration branch introduced useful architecture that should survive
 
 Current provider facts:
 
-- `DATA_STORE_PROVIDER` currently supports `sqlite` and `firestore`.
-- `ATTACHMENT_STORE_PROVIDER` currently supports `local`, `ephemeral`, and Firebase / Cloud Storage aliases.
-- `ADMIN_AUTH_PROVIDER` currently supports `password`; Firebase auth is a placeholder.
+- `DATA_STORE_PROVIDER` currently supports `sqlite` and `convex`.
+- `ATTACHMENT_STORE_PROVIDER` currently supports `local`.
+- `ADMIN_AUTH_PROVIDER` currently supports `password`.
 
 ## Work To Leave Behind
 
@@ -165,6 +165,7 @@ Expected work:
 - Add Convex adapters for sessions, cards, connections, and notes.
 - Keep the existing REST/API surface stable.
 - Verify basic create/read/update/delete flows.
+Current status: the Convex sessions, cards, connections, and notes adapters are implemented. Linked-deployment verification is still pending.
 
 Approval gates:
 
