@@ -1,4 +1,5 @@
 import { passwordAdminAuthProvider } from "./password-admin-auth";
+import { statelessAdminAuthProvider } from "./stateless-admin-auth";
 import type { AdminAuthProvider } from "../backend/types";
 
 function getAdminAuthProviderName() {
@@ -10,6 +11,8 @@ export function getAdminAuthProvider(): AdminAuthProvider {
   switch (provider) {
     case "password":
       return passwordAdminAuthProvider;
+    case "stateless":
+      return statelessAdminAuthProvider;
     default:
       throw new Error(`Unsupported ADMIN_AUTH_PROVIDER: ${provider}`);
   }
