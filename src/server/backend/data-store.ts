@@ -9,9 +9,9 @@ import {
 import * as sessions from "../sessions";
 import {
   convexCardStore,
+  convexConnectionStore,
+  convexNoteStore,
   convexSessionStore,
-  unsupportedConvexConnectionStore,
-  unsupportedConvexNoteStore,
 } from "./convex-data-store";
 import type { CardStore, ConnectionStore, NoteStore, SessionStore } from "./types";
 
@@ -89,7 +89,7 @@ export function getConnectionStore(): ConnectionStore {
     case "sqlite":
       return sqliteConnectionStore;
     case "convex":
-      return unsupportedConvexConnectionStore;
+      return convexConnectionStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }
@@ -101,7 +101,7 @@ export function getNoteStore(): NoteStore {
     case "sqlite":
       return localNoteStore;
     case "convex":
-      return unsupportedConvexNoteStore;
+      return convexNoteStore;
     default:
       throw new Error(`Unsupported DATA_STORE_PROVIDER: ${provider}`);
   }

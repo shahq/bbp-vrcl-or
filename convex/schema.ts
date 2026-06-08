@@ -72,6 +72,7 @@ export default defineSchema({
     })),
   })
     .index("by_note_id", ["noteId"])
+    .index("by_session_note", ["sessionId", "noteId"])
     .index("by_session", ["sessionId"])
     .index("by_session_updated", ["sessionId", "updatedAt"]),
 

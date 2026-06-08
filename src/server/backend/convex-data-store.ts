@@ -6,6 +6,7 @@ import {
   type TimerControlMode,
 } from "../../config/timer";
 import type { Card } from "../cards";
+import type { Connection } from "../connections";
 import {
   generatePassword,
   generateSessionId,
@@ -15,6 +16,7 @@ import {
   type CreateSessionResult,
   type Session,
 } from "../sessions";
+import type { SessionNote } from "../../types";
 import type { CardStore, ConnectionStore, NoteStore, SessionStore } from "./types";
 
 const convexRefs = {
@@ -32,6 +34,19 @@ const convexRefs = {
     update: makeFunctionReference("cards:update"),
     remove: makeFunctionReference("cards:remove"),
     reorder: makeFunctionReference("cards:reorder"),
+  },
+  connections: {
+    listBySession: makeFunctionReference("connections:listBySession"),
+    create: makeFunctionReference("connections:create"),
+    remove: makeFunctionReference("connections:remove"),
+    removeForCard: makeFunctionReference("connections:removeForCard"),
+    replaceBySession: makeFunctionReference("connections:replaceBySession"),
+  },
+  notes: {
+    listBySession: makeFunctionReference("notes:listBySession"),
+    upsert: makeFunctionReference("notes:upsert"),
+    remove: makeFunctionReference("notes:remove"),
+    replaceBySession: makeFunctionReference("notes:replaceBySession"),
   },
 };
 
@@ -94,16 +109,26 @@ function getConvexClient() {
   return new ConvexHttpClient(url);
 }
 
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(stripUndefined) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, child]) =>
+        child === undefined ? [] : [[key, stripUndefined(child)]]
+      )
+    ) as T;
+  }
+  return value;
+}
+
 async function runQuery<Result>(ref: any, args: Record<string, unknown>): Promise<Result> {
-  return await getConvexClient().query(ref, args);
+  return await getConvexClient().query(ref, stripUndefined(args));
 }
 
 async function runMutation<Result>(ref: any, args: Record<string, unknown>): Promise<Result> {
-  return await getConvexClient().mutation(ref, args);
-}
-
-function unsupportedStore(name: string): never {
-  throw new Error(`DATA_STORE_PROVIDER=convex does not implement ${name} yet.`);
+  return await getConvexClient().mutation(ref, stripUndefined(args));
 }
 
 function mapSessionUpdates(updates: Partial<Omit<Session, "id" | "password_hash" | "created_at">>): Omit<ConvexUpdateSessionArgs, "sessionId" | "updatedAt"> {
@@ -250,17 +275,77 @@ export const convexCardStore: CardStore = {
   },
 };
 
-export const unsupportedConvexConnectionStore: ConnectionStore = {
-  getConnectionsBySession: async () => unsupportedStore("ConnectionStore.getConnectionsBySession"),
-  createConnection: async () => unsupportedStore("ConnectionStore.createConnection"),
-  deleteConnection: async () => unsupportedStore("ConnectionStore.deleteConnection"),
-  deleteConnectionsForCard: async () => unsupportedStore("ConnectionStore.deleteConnectionsForCard"),
-  saveAllConnections: async () => unsupportedStore("ConnectionStore.saveAllConnections"),
+export const convexConnectionStore: ConnectionStore = {
+  async getConnectionsBySession(sessionId: string) {
+    return await runQuery<Connection[]>(convexRefs.connections.listBySession, { sessionId });
+  },
+
+  async createConnection(
+    sessionId: string,
+    fromCardId: string,
+    toCardId: string,
+    threadId?: string,
+    color?: string,
+    ownerUserId?: string
+  ) {
+    return await runMutation<Connection>(convexRefs.connections.create, {
+      sessionId,
+      fromCardId,
+      toCardId,
+      threadId,
+      color,
+      ownerUserId,
+      createdAt: new Date().toISOString(),
+    });
+  },
+
+  async deleteConnection(id: string, sessionId?: string) {
+    return await runMutation<boolean>(convexRefs.connections.remove, {
+      connectionId: id,
+      sessionId,
+    });
+  },
+
+  async deleteConnectionsForCard(cardId: string, sessionId?: string) {
+    return await runMutation<boolean>(convexRefs.connections.removeForCard, {
+      cardId,
+      sessionId,
+    });
+  },
+
+  async saveAllConnections(
+    sessionId: string,
+    connections: Array<{ id: string; from: string; to: string; threadId?: string; color?: string; ownerUserId?: string }>
+  ) {
+    await runMutation(convexRefs.connections.replaceBySession, {
+      sessionId,
+      connections,
+      createdAt: new Date().toISOString(),
+    });
+  },
 };
 
-export const unsupportedConvexNoteStore: NoteStore = {
-  listNotes: async () => unsupportedStore("NoteStore.listNotes"),
-  upsertNote: async () => unsupportedStore("NoteStore.upsertNote"),
-  deleteNote: async () => unsupportedStore("NoteStore.deleteNote"),
-  replaceNotes: async () => unsupportedStore("NoteStore.replaceNotes"),
+export const convexNoteStore: NoteStore = {
+  async listNotes(sessionId: string) {
+    return await runQuery<SessionNote[]>(convexRefs.notes.listBySession, { sessionId });
+  },
+
+  async upsertNote(sessionId: string, note: Partial<SessionNote>) {
+    return await runMutation<SessionNote>(convexRefs.notes.upsert, {
+      sessionId,
+      note: note as Record<string, unknown>,
+      updatedAt: new Date().toISOString(),
+    });
+  },
+
+  async deleteNote(sessionId: string, noteId: string) {
+    return await runMutation<boolean>(convexRefs.notes.remove, { sessionId, noteId });
+  },
+
+  async replaceNotes(sessionId: string, notes: Partial<SessionNote>[]) {
+    return await runMutation<SessionNote[]>(convexRefs.notes.replaceBySession, {
+      sessionId,
+      notes: notes as Record<string, unknown>[],
+    });
+  },
 };
