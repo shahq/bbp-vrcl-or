@@ -82,6 +82,8 @@ Vite no longer injects AI provider keys into the browser bundle. Keep all AI key
    - Vercel serverless file systems are not durable for application data.
    - Any Vercel-hosted API should default to `DATA_STORE_PROVIDER=convex` and `ATTACHMENT_STORE_PROVIDER=convex`.
    - Keep SQLite/local mode for local development and fallback verification.
+   - The current `ADMIN_AUTH_PROVIDER=password` still writes short-lived admin sessions through SQLite. Add a Vercel-compatible non-SQLite admin provider before treating the compatibility API as smoke-testable.
+   - Convex session creation still calls the local `sessionFiles.writeSessionMetadata` side effect. Move that write behind a provider/no-op seam for Convex/Vercel before rerunning provider, attachment, and export smokes.
 
 3. **Document extraction**
    - The current extraction path requires Python packages through `scripts/extract_attachment.py`.
@@ -132,14 +134,19 @@ Completed prep:
 7. Added `api/[...].js` as the thin Vercel wrapper around a generated `createApp()` bundle.
 8. Added a Vercel API bundle build step and deployed remote-built preview `https://sqd-hdsmq3b8g-the-shapers-projects.vercel.app`.
 9. Verified the preview API wrapper with `GET /api/health` returning `HTTP 200 {"status":"ok"}` and `/api/sessions` returning the expected app-level admin-auth `HTTP 401`.
+10. Verified script-based Deployment Protection bypass with a temporary Vercel share-link cookie: `GET /api/health` on `https://sqd-hdsmq3b8g-the-shapers-projects.vercel.app` returned `{"status":"ok"}` from plain `fetch`/`curl` with `SMOKE_REQUEST_COOKIE`.
+11. Verified `npm run smoke:provider-api` reaches app admin auth, but the committed preview fails admin login with `HTTP 500`, `{"error":"attempt to write a readonly database"}` because `ADMIN_AUTH_PROVIDER=password` still writes admin sessions through SQLite.
+12. Deployed scratch preview `https://sqd-400gff7fd-the-shapers-projects.vercel.app` from an uncommitted `/tmp` SQLite experiment to prove the next blocker. It reached session creation and then failed with `HTTP 500`, `{"error":"ENOENT: no such file or directory, mkdir '/var/task/data/sessions/bdo-8c7e'"}` because Convex session creation still triggers local session metadata writes.
 
 Recommended next slice:
 
-1. Obtain a reusable Vercel Deployment Protection bypass for script-based preview smokes, either via `x-vercel-protection-bypass`, a reusable browser cookie, or a temporary protection exception.
-2. Run provider, attachment, and export smokes against `https://sqd-hdsmq3b8g-the-shapers-projects.vercel.app` with `SMOKE_REQUEST_COOKIE` or the equivalent bypass header path.
-3. Add `brief-from-uploads` smoke coverage only after deciding whether Phase 6 extraction should run inside Vercel Functions or move to a separate extraction adapter.
-4. Classify failures as Vercel API wrapper, Convex provider, existing auth/session persistence, Deployment Protection access, or deferred extraction-runtime issues.
-5. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
+1. Keep SQLite fallback for local/legacy mode, but add a non-SQLite `AdminAuthProvider` for Vercel, likely `ADMIN_AUTH_PROVIDER=stateless` or `ADMIN_AUTH_PROVIDER=convex`.
+2. Configure Vercel preview to use the new admin provider only after the auth/session semantic change is approved.
+3. Remove `better-sqlite3` from the Vercel function path once Vercel no longer uses the SQLite-backed password admin provider.
+4. Move `sessionFiles.writeSessionMetadata` out of Convex/Vercel request paths, either by adding a provider-aware no-op implementation or by moving session metadata durability fully into the Convex session store.
+5. Rerun provider, attachment, and export smokes against the protected preview with `SMOKE_REQUEST_COOKIE` or `x-vercel-protection-bypass`.
+6. Add `brief-from-uploads` smoke coverage only after deciding whether Phase 6 extraction should run inside Vercel Functions or move to a separate extraction adapter.
+7. Keep document extraction deferred to Phase 6. The Python extraction path and temp-file materialization are still not proven for Vercel Functions.
 
 Checks for that slice:
 
