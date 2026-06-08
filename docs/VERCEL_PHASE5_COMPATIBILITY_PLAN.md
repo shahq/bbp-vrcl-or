@@ -59,6 +59,9 @@ Server-only variables:
 - `GEMINI_API_KEY`
 - `OPENCODE_API_KEY`
 - `OPENROUTER_API_KEY`
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `CLAUDE_API_KEY`
 - `ADMIN_PASSWORD`
 - `PARTYKIT_ADMIN_SECRET`
 - `PARTYKIT_HOST`
@@ -74,17 +77,21 @@ Vite no longer injects AI provider keys into the browser bundle. Keep all AI key
 
 ## AI Preview Testing
 
-The current Vercel Preview compatibility smokes verify health, Convex-backed provider routes, Convex attachment storage, and exports. They do not exercise `/api/ai/*`.
+The current Vercel Preview compatibility smokes verify health, Convex-backed provider routes, Convex attachment storage, and exports. AI has a separate smoke command because live generation requires a paid or metered provider key.
 
 Minimum viable AI testing requires one server-side AI provider key in Vercel Preview:
 
 - For the current default path, set `OPENCODE_API_KEY`, keep `AI_PROVIDER=opencode`, and keep `AI_DEFAULT_MODEL=minimax-m2.5`.
 - For an OpenRouter-first smoke, set `OPENROUTER_API_KEY`, use `AI_PROVIDER=openrouter`, and use an OpenRouter model such as `openrouter/auto`.
 - For a Google/Gemini smoke, set either `GOOGLE_API_KEY` or `GEMINI_API_KEY`, use `AI_PROVIDER=google`, and use a Gemini model.
+- For a direct OpenAI smoke, set `OPENAI_API_KEY`, use `AI_PROVIDER=openai`, and use a model such as `gpt-4o-mini`.
+- For a direct Claude smoke, set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`, use `AI_PROVIDER=anthropic`, and use a model such as `claude-3-5-haiku-latest`.
 
 Do not put these keys in browser variables or committed files. Add them only as server-side Vercel environment variables.
 
-Follow-up reminder: consolidate AI routing behind a handoff-friendly AI gateway seam that can support OpenRouter, Opencode, OpenAI, Anthropic Claude, and Google without scattering vendor assumptions through product logic. Keep this as a separate provider-seam slice after the basic Vercel/Convex runtime is stable.
+`npm run smoke:ai-api` verifies `/api/ai/config` without making a model call. After one provider key is configured, run `SMOKE_AI_LIVE=1 npm run smoke:ai-api` against the preview to verify `/api/ai/complete` and `/api/ai/chat`.
+
+Follow-up reminder: consolidate AI routing behind a handoff-friendly AI gateway seam that can support OpenRouter, Opencode, OpenAI, Anthropic Claude, and Google without scattering vendor assumptions through product logic. The current provider seam supports those targets directly; a later gateway slice should centralize policy, fallback, provider naming, telemetry, and owner-specific key management.
 
 ## Vercel Blockers And Decisions
 
@@ -163,6 +170,9 @@ Completed prep:
 21. Deployed fresh preview `https://sqd-hcxm5wv8e-the-shapers-projects.vercel.app` after password normalization.
 22. Verified browser-style admin login on `https://sqd-hcxm5wv8e-the-shapers-projects.vercel.app` using the normal trimmed password: `POST /api/admin/login` returned `HTTP 200` with `sessionId` and `expiresAt`.
 23. Re-verified protected-preview compatibility smokes on `https://sqd-hcxm5wv8e-the-shapers-projects.vercel.app` using a temporary Vercel share-link cookie: `GET /api/health` returned `HTTP 200 {"status":"ok"}`; `npm run smoke:provider-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 SMOKE_ATTACHMENT_ARCHIVE_ROUNDTRIP=1 npm run smoke:attachments-api` passed; `SMOKE_DIRECT_ATTACHMENT_UPLOAD=1 npm run smoke:exports-api` passed.
+24. Added direct OpenAI and Anthropic Claude provider adapters behind the server-owned AI seam, updated the model selector, and added `npm run smoke:ai-api`.
+25. Deployed preview `https://sqd-4wpw01zm0-the-shapers-projects.vercel.app` with the expanded AI provider seam.
+26. Verified protected-preview AI config smoke on `https://sqd-4wpw01zm0-the-shapers-projects.vercel.app`: `npm run smoke:ai-api` passed and reported `availableProviders=none`, which matches the current Preview env state with no AI provider key configured.
 
 Recommended next slice:
 

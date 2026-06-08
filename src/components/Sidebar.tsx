@@ -421,6 +421,8 @@ export default function Sidebar({
               <option value="minimax-m2.5-free">MiniMax M2.5 Free</option>
               <option value="minimax-m2.5">MiniMax M2.5</option>
               <option value="openrouter/auto">OpenRouter Auto</option>
+              <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+              <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
               <ChevronDown size={14} />

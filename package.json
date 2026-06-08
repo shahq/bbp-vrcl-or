@@ -13,6 +13,7 @@
     "lint": "tsc --noEmit",
     "start": "node --import tsx server.ts",
     "smoke:provider-api": "node scripts/smoke-provider-api.mjs",
+    "smoke:ai-api": "node scripts/smoke-ai-api.mjs",
     "smoke:attachments-api": "node scripts/smoke-attachments-api.mjs",
     "smoke:brief-from-uploads": "node scripts/smoke-brief-from-uploads.mjs",
     "smoke:exports-api": "node scripts/smoke-exports-api.mjs",

@@ -3,24 +3,38 @@ import { generateWithGoogle } from "./providers/google";
 import { hasGoogleApiKey } from "./providers/google";
 import { generateWithOpenRouter, hasOpenRouterApiKey } from "./providers/openrouter";
 import { generateWithOpencode, hasOpencodeApiKey } from "./providers/opencode";
+import { generateWithOpenAi, hasOpenAiApiKey } from "./providers/openai";
+import { generateWithAnthropic, hasAnthropicApiKey } from "./providers/anthropic";
 
 function getConfiguredProvider(): AIProviderName {
   const configured = (process.env.AI_PROVIDER || "").toLowerCase();
   if (configured === "google") return "google";
   if (configured === "openrouter") return "openrouter";
+  if (configured === "openai") return "openai";
+  if (configured === "anthropic" || configured === "claude") return "anthropic";
   return "opencode";
 }
 
 function resolveProvider(model: string): AIProviderName {
-  if (model.startsWith("gemini")) {
+  const normalizedModel = model.toLowerCase();
+
+  if (normalizedModel.startsWith("gemini")) {
     return "google";
   }
 
-  if (model.startsWith("minimax")) {
+  if (normalizedModel.startsWith("minimax")) {
     return "opencode";
   }
 
-  if (model.includes("/")) {
+  if (normalizedModel.startsWith("gpt") || normalizedModel.startsWith("openai/")) {
+    return "openai";
+  }
+
+  if (normalizedModel.startsWith("claude") || normalizedModel.startsWith("anthropic/")) {
+    return "anthropic";
+  }
+
+  if (normalizedModel.includes("/")) {
     return "openrouter";
   }
 
@@ -41,6 +55,14 @@ export function getDefaultModel(): string {
     return "openrouter/auto";
   }
 
+  if (hasOpenAiApiKey()) {
+    return "gpt-4o-mini";
+  }
+
+  if (hasAnthropicApiKey()) {
+    return "claude-3-5-haiku-latest";
+  }
+
   return "gemini-3.1-pro-preview";
 }
 
@@ -51,6 +73,14 @@ function getFallbackModel(provider: AIProviderName): string {
 
   if (provider === "openrouter") {
     return "openrouter/auto";
+  }
+
+  if (provider === "openai") {
+    return "gpt-4o-mini";
+  }
+
+  if (provider === "anthropic") {
+    return "claude-3-5-haiku-latest";
   }
 
   return "minimax-m2.5";
@@ -65,26 +95,42 @@ function isProviderAvailable(provider: AIProviderName): boolean {
     return hasOpenRouterApiKey();
   }
 
+  if (provider === "openai") {
+    return hasOpenAiApiKey();
+  }
+
+  if (provider === "anthropic") {
+    return hasAnthropicApiKey();
+  }
+
   return hasOpencodeApiKey();
 }
 
 function getAlternateProviders(provider: AIProviderName): AIProviderName[] {
   if (provider === "google") {
-    return ["opencode", "openrouter"];
+    return ["opencode", "openrouter", "openai", "anthropic"];
   }
 
   if (provider === "opencode") {
-    return ["google", "openrouter"];
+    return ["google", "openrouter", "openai", "anthropic"];
   }
 
-  return ["google", "opencode"];
+  if (provider === "openrouter") {
+    return ["google", "opencode", "openai", "anthropic"];
+  }
+
+  if (provider === "openai") {
+    return ["google", "opencode", "openrouter", "anthropic"];
+  }
+
+  return ["google", "opencode", "openrouter", "openai"];
 }
 
 function resolveRequest(params: GenerateTextParams): { provider: AIProviderName; model: string } {
   const requestedProvider = resolveProvider(params.model);
 
   if (isProviderAvailable(requestedProvider)) {
-    return { provider: requestedProvider, model: params.model };
+    return { provider: requestedProvider, model: normalizeProviderModel(requestedProvider, params.model) };
   }
 
   for (const alternateProvider of getAlternateProviders(requestedProvider)) {
@@ -94,8 +140,20 @@ function resolveRequest(params: GenerateTextParams): { provider: AIProviderName;
   }
 
   throw new Error(
-    "No configured AI provider is available. Add OPENCODE_API_KEY, OPENROUTER_API_KEY, or GOOGLE_API_KEY/GEMINI_API_KEY."
+    "No configured AI provider is available. Add OPENCODE_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY/CLAUDE_API_KEY, or GOOGLE_API_KEY/GEMINI_API_KEY."
   );
+}
+
+function normalizeProviderModel(provider: AIProviderName, model: string): string {
+  if (provider === "openai" && model.toLowerCase().startsWith("openai/")) {
+    return model.slice("openai/".length);
+  }
+
+  if (provider === "anthropic" && model.toLowerCase().startsWith("anthropic/")) {
+    return model.slice("anthropic/".length);
+  }
+
+  return model;
 }
 
 export function getAiConfig() {
@@ -106,6 +164,8 @@ export function getAiConfig() {
       google: hasGoogleApiKey(),
       opencode: hasOpencodeApiKey(),
       openrouter: hasOpenRouterApiKey(),
+      openai: hasOpenAiApiKey(),
+      anthropic: hasAnthropicApiKey(),
     },
   };
 }
@@ -120,6 +180,14 @@ export async function generateText(params: GenerateTextParams): Promise<string> 
 
   if (resolved.provider === "openrouter") {
     return generateWithOpenRouter(request);
+  }
+
+  if (resolved.provider === "openai") {
+    return generateWithOpenAi(request);
+  }
+
+  if (resolved.provider === "anthropic") {
+    return generateWithAnthropic(request);
   }
 
   return generateWithOpencode(request);

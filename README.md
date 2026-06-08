@@ -85,6 +85,8 @@ AI_DEFAULT_MODEL=minimax-m2.5
 GOOGLE_API_KEY=your_google_api_key
 OPENCODE_API_KEY=your_opencode_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 FIREBASE_PROJECT_ID=your_firebase_project_id
 FIREBASE_CLIENT_EMAIL=your_service_account_client_email
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
@@ -108,7 +110,9 @@ Notes:
 - `ADMIN_AUTH_PROVIDER=password` keeps the current shared admin password flow. Firebase Auth is intentionally deferred for alpha and can be introduced later behind the existing seam.
 - Model choice still determines provider when the selected model is vendor-specific, such as Gemini vs MiniMax vs OpenRouter models like `openrouter/auto`.
 - `GOOGLE_API_KEY` and `GEMINI_API_KEY` are treated interchangeably by the server.
-- Models containing `/` are treated as OpenRouter models by the server.
+- Models containing `/` are treated as OpenRouter models by default, except direct `openai/...` and `anthropic/...` prefixes.
+- OpenAI models such as `gpt-4o-mini` use `OPENAI_API_KEY`.
+- Claude models such as `claude-3-5-haiku-latest` use `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`.
 - `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, and `FIREBASE_STORAGE_BUCKET` are required on the backend once Firestore and Cloud Storage providers are enabled.
 - In local development, the server loads both `.env` and `.env.local`, with `.env.local` taking precedence.
 - If the selected model's provider is unavailable, the server falls back to an available provider instead of hard failing.

@@ -1,6 +1,6 @@
 import { Type } from "@google/genai";
 
-export type AIProviderName = "google" | "opencode" | "openrouter";
+export type AIProviderName = "google" | "opencode" | "openrouter" | "openai" | "anthropic";
 
 export interface AIHistoryMessage {
   role: "user" | "model";
