@@ -81,7 +81,7 @@ The current Vercel Preview compatibility smokes verify health, Convex-backed pro
 
 Minimum viable AI testing requires one server-side AI provider key in Vercel Preview:
 
-- For the current default path, set `OPENCODE_API_KEY`, keep `AI_PROVIDER=opencode`, and keep `AI_DEFAULT_MODEL=deepseek-v4-flash`.
+- For the current default path, set `OPENCODE_API_KEY`, keep `AI_PROVIDER=opencode`, and keep `AI_DEFAULT_MODEL=minimax-m3`.
 - For an OpenRouter-first smoke, set `OPENROUTER_API_KEY`, use `AI_PROVIDER=openrouter`, and use an OpenRouter model such as `openrouter/auto`.
 - For a Google/Gemini smoke, set either `GOOGLE_API_KEY` or `GEMINI_API_KEY`, use `AI_PROVIDER=google`, and use a Gemini model.
 - For a direct OpenAI smoke, set `OPENAI_API_KEY`, use `AI_PROVIDER=openai`, and use a model such as `gpt-4o-mini`.
@@ -173,10 +173,10 @@ Completed prep:
 24. Added direct OpenAI and Anthropic Claude provider adapters behind the server-owned AI seam, updated the model selector, and added `npm run smoke:ai-api`.
 25. Deployed preview `https://sqd-4wpw01zm0-the-shapers-projects.vercel.app` with the expanded AI provider seam.
 26. Verified protected-preview AI config smoke on `https://sqd-4wpw01zm0-the-shapers-projects.vercel.app`: `npm run smoke:ai-api` passed and reported `availableProviders=none`, which matches the current Preview env state with no AI provider key configured.
-27. Set DeepSeek V4 Flash as the default Opencode model: `AI_PROVIDER=opencode`, `AI_DEFAULT_MODEL=deepseek-v4-flash`, with Opencode Go-model requests routed to `https://opencode.ai/zen/go/v1/chat/completions`.
-28. Persisted the non-secret Vercel Preview AI defaults: `AI_PROVIDER=opencode` and `AI_DEFAULT_MODEL=deepseek-v4-flash`.
-29. Deployed preview `https://sqd-nxxpgj946-the-shapers-projects.vercel.app` after the DeepSeek V4 Flash default update.
-30. Verified live protected-preview AI smoke on `https://sqd-nxxpgj946-the-shapers-projects.vercel.app`: `SMOKE_AI_LIVE=1 SMOKE_AI_MODEL=deepseek-v4-flash npm run smoke:ai-api` passed and reported `defaultModel=deepseek-v4-flash`, `provider=opencode`, and `availableProviders=opencode`.
+27. Set MiniMax M3 as the default Opencode model: `AI_PROVIDER=opencode`, `AI_DEFAULT_MODEL=minimax-m3`, with Opencode Go-model requests routed to `https://opencode.ai/zen/go/v1/chat/completions`.
+28. Persisted the non-secret Vercel Preview AI defaults: `AI_PROVIDER=opencode` and `AI_DEFAULT_MODEL=minimax-m3`.
+29. Deployed preview `https://sqd-nxxpgj946-the-shapers-projects.vercel.app` after the Opencode default update.
+30. Verified live protected-preview AI smoke on `https://sqd-nxxpgj946-the-shapers-projects.vercel.app`: `SMOKE_AI_LIVE=1 SMOKE_AI_MODEL=deepseek-v4-flash npm run smoke:ai-api` passed at the time of that preview check. The current default is `minimax-m3`.
 
 Recommended next slice:
 

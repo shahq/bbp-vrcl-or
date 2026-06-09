@@ -405,13 +405,14 @@ export default function NewProject({
           </div>
           {hasUsableUploads && (
             <button
-              disabled={isGenerating || isUploadingAttachments || isGeneratingBriefFromUploads}
+              disabled={isGenerating || isUploadingAttachments}
+              title={isGeneratingBriefFromUploads ? 'Stop generation' : 'Generate Project Overview'}
               onClick={onGenerateBriefFromUploads}
               className="mt-4 inline-flex items-center justify-center gap-3 px-6 py-3 border border-black bg-black text-white hover:bg-gray-900 font-semibold text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isGeneratingBriefFromUploads ? (
                 <>
-                  Generating overview <Loader2 size={18} className="animate-spin" />
+                  Stop generation <Loader2 size={18} className="animate-spin" />
                 </>
               ) : (
                 <>

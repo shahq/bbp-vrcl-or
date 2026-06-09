@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { Type } from "@google/genai";
 import dotenv from "dotenv";
-import { generateText, getAiConfig } from "./src/server/ai";
+import { generateText, generateTextStream, getAiConfig } from "./src/server/ai";
 import { extractAttachmentContent, type ProjectAttachment } from "./src/server/documents";
 import { getCurrentBackend } from "./src/server/backend/current";
 import type { AdminSession } from "./src/server/backend/types";
@@ -552,6 +552,59 @@ async function startServer() {
     } catch (error: any) {
       console.error("AI completion error:", error);
       res.status(500).json({ error: error.message || "Internal Server Error" });
+    }
+  });
+
+  app.get("/api/ai/complete-stream", (_req, res) => {
+    res.status(405).type("text/plain").send("Use POST /api/ai/complete-stream with JSON { prompt, model }.");
+  });
+
+  app.post("/api/ai/complete-stream", async (req, res) => {
+    const abortController = new AbortController();
+    req.on("aborted", () => {
+      abortController.abort();
+    });
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abortController.abort();
+      }
+    });
+
+    try {
+      const { prompt, model } = req.body;
+      if (!prompt) {
+        return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      res.flushHeaders();
+
+      for await (const chunk of generateTextStream({
+        prompt,
+        model: model || getAiConfig().defaultModel,
+        abortSignal: abortController.signal,
+      })) {
+        if (abortController.signal.aborted) break;
+        res.write(chunk);
+      }
+
+      res.end();
+    } catch (error: any) {
+      if (abortController.signal.aborted) {
+        res.end();
+        return;
+      }
+
+      console.error("AI streaming completion error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error.message || "Internal Server Error" });
+        return;
+      }
+      res.end();
     }
   });
 

@@ -13,6 +13,7 @@ export interface GenerateTextParams {
   systemInstruction?: string;
   history?: AIHistoryMessage[];
   message?: string;
+  abortSignal?: AbortSignal;
   responseMimeType?: "text/plain" | "application/json";
   responseSchema?: {
     type: Type;

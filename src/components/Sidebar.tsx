@@ -417,14 +417,10 @@ export default function Sidebar({
               onChange={(e) => onModelChange(e.target.value as ModelType)}
               className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 py-2 pl-3 pr-8 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
             >
+              <option value="minimax-m3">MiniMax M3</option>
               <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
-              <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
-              <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
-              <option value="minimax-m2.5-free">MiniMax M2.5 Free</option>
-              <option value="minimax-m2.5">MiniMax M2.5</option>
-              <option value="openrouter/auto">OpenRouter Auto</option>
-              <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
-              <option value="claude-3-5-haiku-latest">Claude 3.5 Haiku</option>
+              <option value="kimi-k2.6">Kimi K2.6</option>
+              <option value="mimo-v2.5">Mimo V2.5</option>
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
               <ChevronDown size={14} />

@@ -107,6 +107,65 @@ async function requestTextCompletion(
   return data.text || "";
 }
 
+async function requestTextCompletionStream(
+  prompt: string,
+  model: ModelType,
+  onChunk: (text: string) => void,
+  signal?: AbortSignal
+): Promise<string> {
+  const response = await fetch(apiUrl("/api/ai/complete-stream"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ prompt, model }),
+    signal,
+  });
+
+  if (!response.ok) {
+    let errorData;
+    try {
+      errorData = await response.json();
+    } catch (e) {
+      errorData = { error: await response.text() };
+    }
+
+    const errorMessage = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : errorData.error;
+    throw new Error(errorMessage || `AI streaming completion error: ${response.status}`);
+  }
+
+  if (!response.body) {
+    throw new Error("AI streaming response did not include a body.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      if (!chunk) continue;
+
+      fullText += chunk;
+      onChunk(chunk);
+    }
+
+    const finalChunk = decoder.decode();
+    if (finalChunk) {
+      fullText += finalChunk;
+      onChunk(finalChunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullText;
+}
+
 async function requestChatCompletion(
   systemInstruction: string,
   history: { role: 'user' | 'model', parts: { text: string }[] }[],
@@ -142,7 +201,7 @@ async function requestChatCompletion(
   return data.text || "";
 }
 
-export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'deepseek-v4-flash'): Promise<CardData[]> {
+export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'minimax-m3'): Promise<CardData[]> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context, generate Act I headline options for the canvas.
@@ -214,7 +273,7 @@ export async function generateCards(client: string, background: string, notes: s
   }
 }
 
-export async function generateSingleIdea(client: string, background: string, notes: string, section: string, model: ModelType = 'deepseek-v4-flash'): Promise<string> {
+export async function generateSingleIdea(client: string, background: string, notes: string, section: string, model: ModelType = 'minimax-m3'): Promise<string> {
   if (!isAct1SectionId(section)) {
     throw new Error(`Unsupported Act I section: ${section}`);
   }
@@ -250,7 +309,7 @@ export async function synthesizeNoteIntoCard(
   projectNotes: string,
   sourceCard: Pick<CardData, 'section' | 'content'>,
   noteText: string,
-  model: ModelType = 'deepseek-v4-flash'
+  model: ModelType = 'minimax-m3'
 ): Promise<string> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
@@ -279,13 +338,12 @@ export async function synthesizeNoteIntoCard(
   }
 }
 
-export async function generateBriefFromUploads(
+function buildBriefFromUploadsPrompt(
   client: string,
   existingBackground: string,
   notes: string,
-  attachments: ProjectAttachment[],
-  model: ModelType = 'deepseek-v4-flash'
-): Promise<string> {
+  attachments: ProjectAttachment[]
+): string {
   const usableAttachments = attachments
     .filter((attachment) => attachment.summary.trim() || attachment.extractedText.trim() || attachment.note?.trim());
 
@@ -333,6 +391,18 @@ ${excerpt ? `Extracted text excerpt:\n${excerpt}` : ''}
     - Do not use markdown headings, bullets, labels, or quoted wrappers.
   `;
 
+  return prompt;
+}
+
+export async function generateBriefFromUploads(
+  client: string,
+  existingBackground: string,
+  notes: string,
+  attachments: ProjectAttachment[],
+  model: ModelType = 'minimax-m3'
+): Promise<string> {
+  const prompt = buildBriefFromUploadsPrompt(client, existingBackground, notes, attachments);
+
   try {
     const responseText = await requestTextCompletion(prompt, model);
     return responseText.trim() || 'Generated project overview';
@@ -342,12 +412,41 @@ ${excerpt ? `Extracted text excerpt:\n${excerpt}` : ''}
   }
 }
 
+export async function generateBriefFromUploadsStream(
+  client: string,
+  existingBackground: string,
+  notes: string,
+  attachments: ProjectAttachment[],
+  model: ModelType = 'minimax-m3',
+  onChunk: (text: string) => void,
+  signal?: AbortSignal
+): Promise<string> {
+  const prompt = buildBriefFromUploadsPrompt(client, existingBackground, notes, attachments);
+
+  try {
+    const responseText = await requestTextCompletionStream(prompt, model, onChunk, signal);
+    const streamedText = responseText.trim();
+    if (streamedText) {
+      return streamedText;
+    }
+
+    if (signal?.aborted) {
+      throw new DOMException('Brief generation stopped', 'AbortError');
+    }
+
+    return await requestTextCompletion(prompt, model);
+  } catch (error) {
+    console.error('Error streaming brief from uploads:', error);
+    throw error;
+  }
+}
+
 export async function generateProjectOverviewFromQuestionnaire(
   questionnaire: ProjectBriefQuestionnaire,
   answers: Record<string, string>,
   existingBackground: string,
   notes: string,
-  model: ModelType = 'deepseek-v4-flash'
+  model: ModelType = 'minimax-m3'
 ): Promise<string> {
   const answerContext = questionnaire.questions
     .map((question: ProjectBriefQuestion) => {
@@ -391,7 +490,7 @@ export async function generateProjectOverviewFromQuestionnaire(
   }
 }
 
-export async function generateTransformationStory(client: string, background: string, notes: string, chainText: string, model: ModelType = 'deepseek-v4-flash'): Promise<string> {
+export async function generateTransformationStory(client: string, background: string, notes: string, chainText: string, model: ModelType = 'minimax-m3'): Promise<string> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context and the sequence of connected ideas (the story chain), generate a cohesive, creative transformation story (a hero's journey for a business).
@@ -422,7 +521,7 @@ export async function generateTransformationStory(client: string, background: st
   }
 }
 
-export async function generateChatResponse(client: string, background: string, notes: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[], model: ModelType = 'deepseek-v4-flash', mode: 'new' | 'canvas' = 'canvas', context?: ChatGenerationContext): Promise<string> {
+export async function generateChatResponse(client: string, background: string, notes: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[], model: ModelType = 'minimax-m3', mode: 'new' | 'canvas' = 'canvas', context?: ChatGenerationContext): Promise<string> {
   let systemInstruction = '';
   const contextInstruction = `
     Current UI Context:

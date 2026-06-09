@@ -37,10 +37,12 @@ Use this as the running recovery ledger. `firebase-backend-migration` is the UI 
 - [x] `npm run build`
 - [ ] Local smoke test customer-facing UI shell.
 - [ ] Local smoke test infinite canvas pan/zoom/cards/thread connections.
+- [ ] Local PartyKit smoke test with `npm run partykit:dev` on port `1999` while `npm run dev` serves the app.
 - [ ] Provider smoke scripts where env allows.
 
 ## Remaining Review Needs
 
 - [ ] Human review of direct-upload decision: recovery currently preserves legacy upload UI and lets the Convex attachment provider upload server-side.
 - [ ] Human review of Vercel preview env values before deployment.
+- [ ] Human review of preview/staging AI secrets before deployment. Local `.env.local` may contain temporary Opencode credentials, but tracked docs and commits must not.
 - [ ] Human review before removing SQLite, local attachment storage, Firebase files, or Cloud Run files.

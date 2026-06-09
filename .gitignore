@@ -8,5 +8,6 @@ coverage/
 !.env.example
 .firebase/
 .vercel
+.partykit/state/
 data/sessions.db
 data/sessions/

@@ -72,8 +72,14 @@ Required before handoff:
 - `npm run lint`
 - `npm run build`
 - Local smoke test of dashboard/session navigation, top bar, new-project flow, right panel, and infinite canvas pan/zoom/cards/thread connections.
+- Local PartyKit smoke test with both processes running:
+  - Terminal 1: `npm run partykit:dev`
+  - Terminal 2: `npm run dev`
+  - Local env must keep app and PartyKit aligned: `PARTYKIT_HOST=localhost:1999`, `VITE_PARTYKIT_HOST=localhost:1999`, `VITE_PARTYKIT_PARTY=main`, and the same `PARTYKIT_ADMIN_SECRET`/`ADMIN_PASSWORD` fallback on both sides.
 - Provider smoke scripts where env allows.
 
 ## Current Risk
 
 The Convex port was large and slow. Preserve as much of it as possible, but do not let backend salvage overwrite the Firebase UI. If a commit mixes UI drift with useful backend work, manually extract the backend work instead of accepting the commit wholesale.
+
+PartyKit is still the realtime implementation for presence, cursors, canvas sync, and timer broadcast. A browser console error like `WebSocket connection to 'ws://localhost:1999/parties/main/session-...' failed` usually means the local PartyKit dev server is not running on port `1999`, not that the recovered Firebase UI is wrong.

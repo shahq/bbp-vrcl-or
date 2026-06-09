@@ -23,6 +23,32 @@ In a second terminal, run the compatibility smoke test:
 API_BASE_URL=http://localhost:3107 ADMIN_PASSWORD=shazam! npm run smoke:provider-api
 ```
 
+## Local PartyKit
+
+PartyKit remains the realtime layer for presence, cursors, canvas sync, and timer broadcast. Local browser websocket errors to `ws://localhost:1999/parties/main/session-...` usually mean the PartyKit dev process is not running.
+
+Use two terminals for local UI testing:
+
+```bash
+npm run partykit:dev
+```
+
+```bash
+npm run dev
+```
+
+Keep these env values aligned in `.env.local` for local testing:
+
+```bash
+PARTYKIT_HOST=localhost:1999
+VITE_PARTYKIT_HOST=localhost:1999
+VITE_PARTYKIT_PARTY=main
+PARTYKIT_ADMIN_SECRET=shazam!
+ADMIN_PASSWORD=shazam!
+```
+
+If `PARTYKIT_ADMIN_SECRET` is omitted, both the app server and PartyKit fall back to `ADMIN_PASSWORD`. If one side has a different secret, admin/timer websocket permissions will degrade even if the socket connects.
+
 ## Local Convex Development
 
 When you are ready to create or link a Convex project, run:

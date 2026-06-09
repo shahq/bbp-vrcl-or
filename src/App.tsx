@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
@@ -17,7 +17,7 @@ import { ActiveUsers, ConnectionStatus } from './components/UserPresence';
 import { usePartyKit } from './hooks/usePartyKit';
 import type { LiveConnection } from '../party/index';
 import { CardData, ConnectionData, ProjectAttachment, SessionNote } from './types';
-import { generateBriefFromUploads, generateCards, ModelType } from './services/ai';
+import { generateBriefFromUploadsStream, generateCards, ModelType } from './services/ai';
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
@@ -264,7 +264,7 @@ function Dashboard() {
       <Sidebar 
         onViewChange={() => {}} 
         currentView="new" 
-        selectedModel="deepseek-v4-flash"
+        selectedModel="minimax-m3"
         onModelChange={() => {}}
         sessions={allSessions}
         onCreateSession={createSession}
@@ -487,11 +487,12 @@ function SessionView() {
 
   const [projectData, setProjectData] = useState({ client: '', background: '', notes: '' });
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<ModelType>('deepseek-v4-flash');
+  const [selectedModel, setSelectedModel] = useState<ModelType>('minimax-m3');
   const [attachments, setAttachments] = useState<ProjectAttachment[]>([]);
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [isGeneratingBriefFromUploads, setIsGeneratingBriefFromUploads] = useState(false);
+  const briefGenerationAbortRef = useRef<AbortController | null>(null);
   const [isSavingProjectChanges, setIsSavingProjectChanges] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRegeneratingCards, setIsRegeneratingCards] = useState(false);
@@ -1486,6 +1487,10 @@ function SessionView() {
 
   const handleGenerateBriefFromUploads = async () => {
     if (!sessionId || (!isAdminVerified && !isEditMode)) return;
+    if (isGeneratingBriefFromUploads) {
+      briefGenerationAbortRef.current?.abort();
+      return;
+    }
 
     const usableAttachments = attachments.filter((attachment) =>
       attachment.summary.trim() || attachment.extractedText.trim() || attachment.note?.trim()
@@ -1496,17 +1501,67 @@ function SessionView() {
       return;
     }
 
+    const abortController = new AbortController();
+    briefGenerationAbortRef.current = abortController;
+    const previousBackground = projectData.background;
+    const placeholderBrief = 'Generating project overview';
+    let streamedBrief = '';
+    let pendingBrief = '';
+    let flushTimer: number | null = null;
+    let progressTimer: number | null = null;
+    let progressStep = 0;
+    const flushBrief = () => {
+      if (!pendingBrief) return;
+      setProjectData((prev) => ({ ...prev, background: pendingBrief }));
+      flushTimer = null;
+    };
+    const showProgress = () => {
+      if (streamedBrief) return;
+      progressStep += 1;
+      const dots = '.'.repeat((progressStep % 3) + 1);
+      setProjectData((prev) => ({ ...prev, background: `${placeholderBrief}${dots}` }));
+    };
+
     setIsGeneratingBriefFromUploads(true);
+    setProjectData((prev) => ({ ...prev, background: `${placeholderBrief}...` }));
+    progressTimer = window.setInterval(showProgress, 350);
+
     try {
-      const brief = await generateBriefFromUploads(
+      const brief = await generateBriefFromUploadsStream(
         projectData.client || currentSession?.name || '',
-        projectData.background,
+        previousBackground,
         projectData.notes,
         usableAttachments,
-        selectedModel
+        selectedModel,
+        (chunk) => {
+          if (progressTimer !== null) {
+            window.clearInterval(progressTimer);
+            progressTimer = null;
+          }
+          streamedBrief += chunk;
+          pendingBrief = streamedBrief;
+          if (flushTimer === null) {
+            flushTimer = window.setTimeout(flushBrief, 40);
+          }
+        },
+        abortController.signal
       );
 
-      setProjectData((prev) => ({ ...prev, background: brief }));
+      if (flushTimer !== null) {
+        window.clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+
+      if (abortController.signal.aborted) {
+        if (!streamedBrief.trim()) {
+          setProjectData((prev) => ({ ...prev, background: previousBackground }));
+        }
+        showToast('Stopped project overview generation');
+        return;
+      }
+
+      const finalBrief = brief.trim();
+      setProjectData((prev) => ({ ...prev, background: finalBrief }));
 
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'PUT',
@@ -1515,7 +1570,7 @@ function SessionView() {
         }),
         body: JSON.stringify(getEditRequestBody({
           project_client: projectData.client || currentSession?.name || '',
-          project_background: brief,
+          project_background: finalBrief,
           project_notes: projectData.notes,
         })),
       });
@@ -1527,14 +1582,34 @@ function SessionView() {
       setCurrentSession((prev) => prev ? {
         ...prev,
         project_client: projectData.client || currentSession?.name || '',
-        project_background: brief,
+        project_background: finalBrief,
         project_notes: projectData.notes,
       } : prev);
       showToast('Generated project overview from uploads');
     } catch (error: any) {
+      if (error?.name === 'AbortError' || abortController.signal.aborted) {
+        if (!streamedBrief.trim()) {
+          setProjectData((prev) => ({ ...prev, background: previousBackground }));
+        }
+        showToast('Stopped project overview generation');
+        return;
+      }
+
+      if (!streamedBrief.trim()) {
+        setProjectData((prev) => ({ ...prev, background: previousBackground }));
+      }
       console.error('Error generating brief from uploads:', error);
       showToast(error.message || 'Could not generate brief from uploads');
     } finally {
+      if (flushTimer !== null) {
+        window.clearTimeout(flushTimer);
+      }
+      if (progressTimer !== null) {
+        window.clearInterval(progressTimer);
+      }
+      if (briefGenerationAbortRef.current === abortController) {
+        briefGenerationAbortRef.current = null;
+      }
       setIsGeneratingBriefFromUploads(false);
     }
   };

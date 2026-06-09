@@ -2,7 +2,7 @@ import type { AIProviderName, GenerateTextParams } from "./types";
 import { generateWithGoogle } from "./providers/google";
 import { hasGoogleApiKey } from "./providers/google";
 import { generateWithOpenRouter, hasOpenRouterApiKey } from "./providers/openrouter";
-import { generateWithOpencode, hasOpencodeApiKey } from "./providers/opencode";
+import { generateWithOpencode, hasOpencodeApiKey, streamWithOpencode } from "./providers/opencode";
 import { generateWithOpenAi, hasOpenAiApiKey } from "./providers/openai";
 import { generateWithAnthropic, hasAnthropicApiKey } from "./providers/anthropic";
 
@@ -26,7 +26,8 @@ function resolveProvider(model: string): AIProviderName {
     normalizedModel.startsWith("minimax") ||
     normalizedModel.startsWith("deepseek-v4-") ||
     normalizedModel.startsWith("glm-") ||
-    normalizedModel.startsWith("kimi-")
+    normalizedModel.startsWith("kimi-") ||
+    normalizedModel.startsWith("mimo-")
   ) {
     return "opencode";
   }
@@ -53,7 +54,7 @@ export function getDefaultModel(): string {
   }
 
   if (hasOpencodeApiKey()) {
-    return "deepseek-v4-flash";
+    return "minimax-m3";
   }
 
   if (hasOpenRouterApiKey()) {
@@ -88,7 +89,7 @@ function getFallbackModel(provider: AIProviderName): string {
     return "claude-3-5-haiku-latest";
   }
 
-  return "deepseek-v4-flash";
+  return "minimax-m3";
 }
 
 function isProviderAvailable(provider: AIProviderName): boolean {
@@ -196,4 +197,16 @@ export async function generateText(params: GenerateTextParams): Promise<string> 
   }
 
   return generateWithOpencode(request);
+}
+
+export async function* generateTextStream(params: GenerateTextParams): AsyncGenerator<string> {
+  const resolved = resolveRequest(params);
+  const request = { ...params, model: resolved.model };
+
+  if (resolved.provider === "opencode") {
+    yield* streamWithOpencode(request);
+    return;
+  }
+
+  yield await generateText(request);
 }
