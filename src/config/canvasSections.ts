@@ -22,19 +22,19 @@ export type LegacySectionId = typeof LEGACY_SECTION_IDS[number];
 export const SECTION_LABELS: Record<CanvasSectionId, string> = {
   place: "Setting",
   role: "Role",
-  point_a: "Point A",
-  point_b: "Point B",
-  change: "Call to Action",
-  story: "Story",
+  point_a: "Challenge",
+  point_b: "Desired end state",
+  change: "How do we get there?",
+  story: "Story Foundation",
 };
 
 export const SECTION_EXPORT_TITLES: Record<CanvasSectionId, string> = {
   place: "Setting",
   role: "Role",
-  point_a: "Point A",
-  point_b: "Point B",
-  change: "Call to Action",
-  story: "Story",
+  point_a: "Challenge",
+  point_b: "Desired end state",
+  change: "How do we get there?",
+  story: "Story Foundation",
 };
 
 export const SECTION_CARD_COLORS: Record<CanvasSectionId, string> = {
@@ -42,7 +42,7 @@ export const SECTION_CARD_COLORS: Record<CanvasSectionId, string> = {
   role: "bg-[#ffebee]",
   point_a: "bg-[#f3e5f5]",
   point_b: "bg-[#e0f7fa]",
-  change: "bg-white border-2 border-gray-800",
+  change: "bg-white border-2 border-gray-500",
   story: "bg-[#fff9c4]",
 };
 

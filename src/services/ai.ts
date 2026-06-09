@@ -53,28 +53,28 @@ function buildAct1CardGenerationInstructions() {
   return `
     ACT 1 generation rules:
     - Generate Act I as a progressive narrative argument, not isolated sentences.
-    - The flow is Setting -> Role -> Point A -> Point B -> Call to Action.
+    - The flow is Setting -> Role -> Challenge -> Desired end state -> How do we get there?
     - Each section must introduce new information, increase clarity or urgency, and move the story forward.
     - Generate exactly 3 options per section.
     - Each option must be a single sentence of ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
     - Each option must contain one idea only and be readable as a standalone presentation headline.
     - Use active voice, present tense, clear conversational language, audience-focused framing, and compressed phrasing.
     - Avoid corporate jargon, buzzwords, marketing language, sales language, formal phrasing, and multi-idea sentences.
-    - Do not include product names, product features, implementation details, technical architecture, marketing claims, company-centric framing, or solution details except in Call to Action.
+    - Do not include product names, product features, implementation details, technical architecture, marketing claims, company-centric framing, or solution details except in How do we get there?
     - Determine direct audience mode ("you", "your") or shared perspective mode ("we", "our", "us") from the Project Overview.
     - Use the same perspective across all five sections.
     - Do not default to "You..." for every sentence.
     - Vary openings across pronoun-led, environment-led, situation-led, pressure-led, and outcome-led structures.
     - Across all options, no more than 2 sentences should start with the same word.
-    - Do not repeat previous sections, mirror Point A in Point B form, or turn Point B into Call to Action wording.
+    - Do not repeat previous sections, mirror Challenge in Desired end state form, or turn Desired end state into How do we get there? wording.
     - Before returning, verify: 3 options per section, ${ACT1_CARD_CHARACTER_LIMIT} characters or less, one idea per sentence, consistent perspective, no repetition, natural spoken phrasing.
 
     Section-specific rules:
     - place (Setting): Define the environment the audience operates in. Include industry conditions, external pressures, market dynamics, or operational environment. Exclude problems, solutions, and outcomes.
     - role (Role): Define audience responsibility. Include accountability, ownership, leadership, or mission. Exclude problems, outcomes, and frustration.
-    - point_a (Point A): Describe current friction or limitation. Include friction, inefficiency, constraints, or selective grounded risks. At least 1 option should be a standard challenge; at least 2 should include stakes when contextually appropriate. Avoid exaggeration and fear-based language.
-    - point_b (Point B): Define the desired future state. Include improved capability, success state, or operational benefit. Exclude methods, tools, and implementation.
-    - change (Call to Action): Define the required shift to move from Point A to Point B. Include decisions, commitments, strategic shifts, or organizational change. Exclude product pitches, benefits, and outcomes already stated in Point B.
+    - point_a (Challenge): Describe current friction or limitation. Include friction, inefficiency, constraints, or selective grounded risks. At least 1 option should be a standard challenge; at least 2 should include stakes when contextually appropriate. Avoid exaggeration and fear-based language.
+    - point_b (Desired end state): Define the desired future state. Include improved capability, success state, or operational benefit. Exclude methods, tools, and implementation.
+    - change (How do we get there?): Define the required shift to move from Challenge to Desired end state. Include decisions, commitments, strategic shifts, or organizational change. Exclude product pitches, benefits, and outcomes already stated in Desired end state.
   `;
 }
 
@@ -503,7 +503,7 @@ export async function generateTransformationStory(client: string, background: st
     Story Chain (Connected Ideas):
     ${chainText}
 
-    The story should be an arc following the logical steps of the card columns: Setting > Role > Point A > Point B > Call to Action.
+    The story should be an arc following the logical steps of the card columns: Setting > Role > Challenge > Desired end state > How do we get there?
     Address the business/client directly in the third person (e.g., "You summoned your small team...", "They realized...").
     Write a creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles, and mapping out the path to success.
     Make it dynamic, engaging, and directly connected to the provided nodes.

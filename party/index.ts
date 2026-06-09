@@ -33,10 +33,21 @@ export interface LiveConnection {
   role: ConnectionRole;
 }
 
+export interface CardDraft {
+  cardId: string;
+  content: string;
+  userId: string;
+  userName: string;
+  userColor: string;
+  isActive: boolean;
+  timestamp: number;
+}
+
 export type Message =
   | { type: "project:update"; updates: { project_client?: string; project_background?: string; project_notes?: string }; timestamp: number; userId: string }
   | { type: "card:create"; card: CardData; timestamp: number; userId: string }
   | { type: "card:update"; cardId: string; updates: Partial<CardData>; timestamp: number; userId: string }
+  | { type: "card:draft"; cardId: string; draft: CardDraft; timestamp: number; userId: string }
   | { type: "card:delete"; cardId: string; timestamp: number; userId: string }
   | { type: "card:reorder"; section: string; cardIds: string[]; timestamp: number; userId: string }
   | { type: "connection:create"; connection: ConnectionData; timestamp: number; userId: string }
@@ -394,6 +405,7 @@ export default class SessionServer implements Party.Server {
         case "project:update":
         case "card:create":
         case "card:update":
+        case "card:draft":
         case "card:delete":
         case "card:reorder":
         case "connection:create":

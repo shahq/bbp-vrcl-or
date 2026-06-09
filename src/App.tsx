@@ -15,7 +15,7 @@ import SessionPasswordWall from './components/SessionPasswordWall';
 import { UserProfilePrompt, UserProfile } from './components/UserProfilePrompt';
 import { ActiveUsers, ConnectionStatus } from './components/UserPresence';
 import { usePartyKit } from './hooks/usePartyKit';
-import type { LiveConnection } from '../party/index';
+import type { CardDraft, LiveConnection } from '../party/index';
 import { CardData, ConnectionData, ProjectAttachment, SessionNote } from './types';
 import { generateBriefFromUploadsStream, generateCards, ModelType } from './services/ai';
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
@@ -24,6 +24,7 @@ import type { TutorialItem } from './tutorials';
 import { apiUrl } from './config/api';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import { normalizeTimerControlMode, type TimerControlMode } from './config/timer';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 // Session types
 interface Session {
@@ -68,33 +69,33 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route 
-        path="/login" 
+      <Route
+        path="/login"
         element={
           isAdminVerified ? (
             <Navigate to="/" replace />
           ) : (
             <LoginPage />
           )
-        } 
+        }
       />
-      
-      <Route 
-        path="/" 
+
+      <Route
+        path="/"
         element={
           isAdminVerified ? (
             <Dashboard />
           ) : (
             <Navigate to="/login" replace />
           )
-        } 
+        }
       />
-      
-      <Route 
-        path="/:sessionId" 
+
+      <Route
+        path="/:sessionId"
         element={<SessionView />}
       />
-      
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -151,9 +152,9 @@ function Dashboard() {
     try {
       const response = await fetch(apiUrl('/api/sessions'), {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'x-admin-session': adminSessionId! 
+          'x-admin-session': adminSessionId!
         },
         body: JSON.stringify({ name, require_password: requirePassword })
       });
@@ -166,13 +167,13 @@ function Dashboard() {
       if (response.ok) {
         const data = await response.json();
         await loadSessions();
-        
+
         setNewSessionInfo({
           id: data.session.id,
           name: data.session.name,
           password: data.session.password
         });
-        
+
         if (data.session.password) {
           setSessionPasswords(prev => ({
             ...prev,
@@ -197,7 +198,7 @@ function Dashboard() {
       tone: 'danger',
     });
     if (!confirmed) return;
-    
+
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'DELETE',
@@ -261,9 +262,9 @@ function Dashboard() {
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden">
       {dialog}
-      <Sidebar 
-        onViewChange={() => {}} 
-        currentView="new" 
+      <Sidebar
+        onViewChange={() => {}}
+        currentView="new"
         selectedModel="minimax-m3"
         onModelChange={() => {}}
         sessions={allSessions}
@@ -273,7 +274,7 @@ function Dashboard() {
         onLogout={logout}
         isAdmin={true}
       />
-      
+
       <div className="flex flex-col flex-1 min-w-0">
         <TopBar projectName="Admin Dashboard" />
         <div className="flex flex-1 overflow-hidden relative">
@@ -296,7 +297,7 @@ function Dashboard() {
                       <label className="text-sm font-medium text-gray-700">Session Name</label>
                       <div className="text-lg font-semibold">{newSessionInfo.name}</div>
                     </div>
-                    
+
                     <div className="mb-4">
                       <label className="text-sm font-medium text-gray-700">Session URL</label>
                       <div className="flex items-center gap-2">
@@ -358,16 +359,16 @@ function Dashboard() {
             )}
 
             <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
-            
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
               <h2 className="text-xl font-semibold mb-4">All Sessions ({allSessions.length})</h2>
-              
+
               {allSessions.length === 0 ? (
                 <p className="text-gray-500">No sessions yet. Create one from the sidebar.</p>
               ) : (
                 <div className="grid gap-4">
                   {allSessions.map(session => (
-                    <div 
+                    <div
                       key={session.id}
                       className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                     >
@@ -382,7 +383,7 @@ function Dashboard() {
                                 {sessionPasswords[session.id] ? (
                                   <>
                                     <span className="font-mono bg-gray-200 px-2 py-0.5 rounded">
-                                      {visiblePasswords[session.id] 
+                                      {visiblePasswords[session.id]
                                         ? sessionPasswords[session.id]
                                         : '••••••••'
                                       }
@@ -435,7 +436,7 @@ function Dashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <a 
+                        <a
                           href={`/${session.id}`}
                           className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm"
                         >
@@ -453,7 +454,7 @@ function Dashboard() {
                 </div>
               )}
             </div>
-            
+
             <div className="bg-indigo-50 rounded-xl p-6 border border-indigo-100">
               <h3 className="font-semibold text-indigo-900 mb-2">Quick Tips</h3>
               <ul className="text-sm text-indigo-800 space-y-1">
@@ -479,6 +480,7 @@ function SessionView() {
 
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [cards, setCards] = useState<CardData[]>([]);
+  const [liveCardDrafts, setLiveCardDrafts] = useState<Record<string, CardDraft>>({});
   const [connections, setConnections] = useState<ConnectionData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -497,6 +499,10 @@ function SessionView() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRegeneratingCards, setIsRegeneratingCards] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<'brief' | 'canvas'>('canvas');
+  const [isRightPanelCompact, setIsRightPanelCompact] = useState(() => {
+    const stored = localStorage.getItem('bbp_right_panel_compact');
+    return stored ? stored === 'true' : false;
+  });
   const [activeTutorial, setActiveTutorial] = useState<TutorialItem | null>(null);
   const [adminPartyKitToken, setAdminPartyKitToken] = useState<string | null>(null);
   const [adminSessions, setAdminSessions] = useState<Session[]>([]);
@@ -504,6 +510,25 @@ function SessionView() {
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showProfilePrompt, setShowProfilePrompt] = useState(false);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      setLiveCardDrafts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [cardId, draft] of Object.entries(prev)) {
+          if (now - draft.timestamp > 8000) {
+            delete next[cardId];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -524,6 +549,10 @@ function SessionView() {
     loadAiConfig();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('bbp_right_panel_compact', String(isRightPanelCompact));
+  }, [isRightPanelCompact]);
 
   useEffect(() => {
     if (isAdminVerified) {
@@ -704,6 +733,7 @@ function SessionView() {
     error: partyKitError,
     sendCardCreate,
     sendCardUpdate,
+    sendCardDraft,
     sendCardDelete,
     sendCardReorder,
     sendConnectionCreate,
@@ -730,17 +760,57 @@ function SessionView() {
       showToast(`${card.section}: New card added by collaborator`);
     },
     onCardUpdate: (cardId, updates) => {
+      setLiveCardDrafts((prev) => {
+        if (!prev[cardId]) return prev;
+        const next = { ...prev };
+        delete next[cardId];
+        return next;
+      });
       setCards((prev) =>
         prev.map((card) =>
           card.id === cardId ? { ...card, ...updates } : card
         )
       );
     },
+    onCardDraft: (draft) => {
+      setLiveCardDrafts((prev) => {
+        if (!draft.isActive) {
+          if (!prev[draft.cardId]) return prev;
+          const next = { ...prev };
+          delete next[draft.cardId];
+          return next;
+        }
+
+        return {
+          ...prev,
+          [draft.cardId]: draft,
+        };
+      });
+    },
     onCardDelete: (cardId) => {
+      setLiveCardDrafts((prev) => {
+        if (!prev[cardId]) return prev;
+        const next = { ...prev };
+        delete next[cardId];
+        return next;
+      });
       setCards((prev) => prev.filter((card) => card.id !== cardId));
       setConnections((prev) =>
         prev.filter((conn) => conn.from !== cardId && conn.to !== cardId)
       );
+    },
+    onUserLeave: (userId) => {
+      setLiveCardDrafts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [cardId, draft] of Object.entries(prev)) {
+          if (draft.userId === userId) {
+            delete next[cardId];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     },
     onCardReorder: (section, cardIds) => {
       setCards((prev) => {
@@ -1002,7 +1072,7 @@ function SessionView() {
   useEffect(() => {
     if (!sessionId) return;
     setWorkspaceView('canvas');
-    
+
     const loadSession = async () => {
       setIsLoading(true);
       try {
@@ -1010,11 +1080,12 @@ function SessionView() {
         if (response.ok) {
           const data = await response.json();
           setCurrentSession(data.session);
-          
+
           if (isAdminVerified) {
             setShowPasswordWall(false);
             setIsEditMode(true);
             setCards(data.cards || []);
+            setLiveCardDrafts({});
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
             await loadNotes(sessionId);
@@ -1038,6 +1109,7 @@ function SessionView() {
                     setShowPasswordWall(false);
                     setIsEditMode(true);
                     setCards(data.cards || []);
+                    setLiveCardDrafts({});
                     setConnections(data.connections || []);
                     await loadAttachments(sessionId);
                     await loadNotes(sessionId);
@@ -1059,6 +1131,7 @@ function SessionView() {
               setShowPasswordWall(false);
               setIsEditMode(true);
               setCards(data.cards || []);
+              setLiveCardDrafts({});
               setConnections(data.connections || []);
               await loadAttachments(sessionId);
               await loadNotes(sessionId);
@@ -1079,7 +1152,7 @@ function SessionView() {
         setIsLoading(false);
       }
     };
-    
+
     loadSession();
   }, [sessionId, isAdminVerified, adminSessionId, loadAttachments, loadNotes]);
 
@@ -1094,9 +1167,10 @@ function SessionView() {
         if (response.ok) {
           const data = await response.json();
           setCurrentSession(data.session);
-          
+
           if (data.session.onboarding_completed && !currentSession?.onboarding_completed) {
             setCards(data.cards || []);
+            setLiveCardDrafts({});
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
             await loadNotes(sessionId);
@@ -1118,7 +1192,7 @@ function SessionView() {
 
   const verifyPassword = async (password: string): Promise<boolean> => {
     if (!sessionId) return false;
-    
+
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/verify`), {
         method: 'POST',
@@ -1132,11 +1206,12 @@ function SessionView() {
           setIsEditMode(true);
           setShowPasswordWall(false);
           sessionStorage.setItem(`session_${sessionId}_password`, password);
-          
+
           const sessionResponse = await fetch(apiUrl(`/api/sessions/${sessionId}`));
           if (sessionResponse.ok) {
             const data = await sessionResponse.json();
             setCards(data.cards || []);
+            setLiveCardDrafts({});
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
             await loadNotes(sessionId);
@@ -1164,11 +1239,11 @@ function SessionView() {
 
   const completeOnboarding = async () => {
     if (!sessionId || !isAdminVerified) return;
-    
+
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/complete-onboarding`), {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'x-admin-session': adminSessionId || ''
         }
@@ -1324,24 +1399,24 @@ function SessionView() {
 
   const handleStartProject = async () => {
     if (!sessionId || !isAdminVerified) return;
-    
+
     if (!currentSession?.name && !projectData.background) {
       await completeOnboarding();
       return;
     }
-    
+
     setIsGenerating(true);
     try {
       await saveProjectMetadata();
 
       const generatedCards = await generateCards(
-        projectData.client || currentSession?.name || '', 
-        projectData.background, 
-        projectData.notes, 
+        projectData.client || currentSession?.name || '',
+        projectData.background,
+        projectData.notes,
         selectedModel
       );
       await createGeneratedCards(generatedCards);
-      
+
       await completeOnboarding();
     } catch (error: any) {
       console.error("Failed to generate cards", error);
@@ -1446,6 +1521,7 @@ function SessionView() {
       const data = await response.json();
       setCurrentSession(data.session);
       setCards(data.cards || []);
+      setLiveCardDrafts({});
       setConnections(data.connections || []);
       setAttachments(data.attachments || []);
       setSessionNotes(data.notes || []);
@@ -1758,6 +1834,12 @@ function SessionView() {
       }
 
       sendCardUpdate(cardId, updates);
+      setLiveCardDrafts((prev) => {
+        if (!prev[cardId]) return prev;
+        const next = { ...prev };
+        delete next[cardId];
+        return next;
+      });
     } catch (error) {
       console.error('Error updating card:', error);
       throw error;
@@ -1782,7 +1864,7 @@ function SessionView() {
       }
 
       const data = await response.json();
-      
+
       const newCard: CardData = {
         id: data.card.id,
         section: data.card.section,
@@ -1823,6 +1905,7 @@ function SessionView() {
     if (response.ok) {
       const data = await response.json();
       setCards(data.cards || []);
+      setLiveCardDrafts({});
       setConnections(data.connections || []);
     }
   };
@@ -1990,10 +2073,10 @@ function SessionView() {
         </div>
       )}
 
-      <Sidebar 
-        onViewChange={() => {}} 
-        currentView={showBriefWorkspace ? "new" : "canvas"} 
-        selectedModel={selectedModel} 
+      <Sidebar
+        onViewChange={() => {}}
+        currentView={showBriefWorkspace ? "new" : "canvas"}
+        selectedModel={selectedModel}
         onModelChange={setSelectedModel}
         sessions={adminSessions}
         currentSession={currentSession}
@@ -2052,13 +2135,22 @@ function SessionView() {
           <div className="flex items-center gap-3">
             <ActiveUsers users={activeUsers} currentUserId={userProfile?.id || ''} />
             <ConnectionStatus isConnected={isConnected} isConnecting={isConnecting} message={partyKitError?.message} />
+            <button
+              type="button"
+              onClick={() => setIsRightPanelCompact((value) => !value)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-900"
+              title={isRightPanelCompact ? 'Expand chat panel' : 'Collapse chat panel'}
+              aria-label={isRightPanelCompact ? 'Expand chat panel' : 'Collapse chat panel'}
+            >
+              {isRightPanelCompact ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+            </button>
           </div>
         </TopBar>
-        
+
         <div className="flex flex-1 overflow-hidden relative">
           {showCanvasWorkspace ? (
             <>
-              <Canvas 
+              <Canvas
                 onSelectCard={setSelectedCard}
                 selectedCard={selectedCard}
                 cards={cards}
@@ -2069,6 +2161,7 @@ function SessionView() {
                 isEditMode={isEditMode}
                 currentSession={currentSession}
                 onCardUpdate={handleCardUpdate}
+                onCardDraft={sendCardDraft}
                 onCardAdd={handleCardAdd}
                 onCardDelete={handleCardDelete}
                 onCardReorder={handleCardReorder}
@@ -2077,35 +2170,38 @@ function SessionView() {
                 connections={connections}
                 onCursorMove={sendCursorMove}
                 activeUsers={activeUsers}
+                liveCardDrafts={liveCardDrafts}
                 currentUserId={userProfile?.id || ''}
                 currentUserColor={userProfile?.color || partyUserColor}
                 activeTutorial={activeTutorial}
                 onCloseTutorial={() => setActiveTutorial(null)}
               />
-              <RightPanel 
-                selectedCard={selectedCard} 
-                currentView="canvas" 
-                cards={cards} 
-                projectData={projectData}
-                selectedModel={selectedModel}
-                currentSession={currentSession}
-                isEditMode={isEditMode}
-                attachments={attachments}
-                sessionNotes={sessionNotes}
-                currentUser={userProfile ? {
-                  userId: userProfile.id,
-                  name: userProfile.name,
-                  role: isAdminVerified ? 'admin' : 'participant',
-                } : undefined}
-                onUpdateSessionNote={handleUpdateSessionNote}
-                onUpdateProjectBackground={handleUpdateProjectBackground}
-                onSaveAndRegenerateProjectBackground={isEditMode ? handleRegenerateCards : undefined}
-              />
+              {!isRightPanelCompact && (
+                <RightPanel
+                  selectedCard={selectedCard}
+                  currentView="canvas"
+                  cards={cards}
+                  projectData={projectData}
+                  selectedModel={selectedModel}
+                  currentSession={currentSession}
+                  isEditMode={isEditMode}
+                  attachments={attachments}
+                  sessionNotes={sessionNotes}
+                  currentUser={userProfile ? {
+                    userId: userProfile.id,
+                    name: userProfile.name,
+                    role: isAdminVerified ? 'admin' : 'participant',
+                  } : undefined}
+                  onUpdateSessionNote={handleUpdateSessionNote}
+                  onUpdateProjectBackground={handleUpdateProjectBackground}
+                  onSaveAndRegenerateProjectBackground={isEditMode ? handleRegenerateCards : undefined}
+                />
+              )}
             </>
           ) : (
             <>
               {isAdminVerified || currentSession.onboarding_completed ? (
-                <NewProject 
+                <NewProject
                   projectName={currentSession.name}
                   sessionId={currentSession.id}
                   onRenameProject={handleRenameProject}
@@ -2145,17 +2241,19 @@ function SessionView() {
                   </div>
                 </div>
               )}
-              <RightPanel 
-                selectedCard={selectedCard} 
-                currentView="new" 
-                cards={cards} 
-                projectData={projectData}
-                selectedModel={selectedModel}
-                currentSession={currentSession}
-                isEditMode={isEditMode}
-                attachments={attachments}
-                onApplyProjectBackground={handleApplyProjectBackground}
-              />
+              {!isRightPanelCompact && (
+                <RightPanel
+                  selectedCard={selectedCard}
+                  currentView="new"
+                  cards={cards}
+                  projectData={projectData}
+                  selectedModel={selectedModel}
+                  currentSession={currentSession}
+                  isEditMode={isEditMode}
+                  attachments={attachments}
+                  onApplyProjectBackground={handleApplyProjectBackground}
+                />
+              )}
             </>
           )}
         </div>

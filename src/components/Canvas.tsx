@@ -11,7 +11,7 @@ import { motion } from 'motion/react';
 import InfiniteCanvas from './InfiniteCanvas';
 import { UserCursors } from './UserPresence';
 import FloatingVideoPlayer from './FloatingVideoPlayer';
-import type { UserPresence } from '../../party/index';
+import type { CardDraft, UserPresence } from '../../party/index';
 import { generateSingleIdea, ModelType } from '../services/ai';
 import type { TutorialItem } from '../tutorials';
 
@@ -27,6 +27,7 @@ interface CanvasProps {
   currentSession?: { id: string; name: string } | null;
   onEditRequest?: () => void;
   onCardUpdate?: (cardId: string, updates: Partial<CardData>) => Promise<void>;
+  onCardDraft?: (cardId: string, content: string, isActive?: boolean) => void;
   onCardAdd?: (card: Omit<CardData, 'id'>) => Promise<string | undefined>;
   onCursorMove?: (x: number, y: number) => void;
   connections?: ConnectionData[];
@@ -35,6 +36,7 @@ interface CanvasProps {
   onConnectionCreate?: (from: string, to: string, threadId?: string, color?: string, ownerUserId?: string) => Promise<void>;
   onConnectionDelete?: (connectionId: string) => Promise<void>;
   activeUsers?: UserPresence[];
+  liveCardDrafts?: Record<string, CardDraft>;
   currentUserId?: string;
   currentUserColor?: string;
   activeTutorial?: TutorialItem | null;
@@ -189,7 +191,7 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({
   );
 }
 
-export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], currentUserId = '', activeTutorial, onCloseTutorial }: CanvasProps) {
+export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardDraft, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], liveCardDrafts = {}, currentUserId = '', activeTutorial, onCloseTutorial }: CanvasProps) {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
@@ -543,8 +545,29 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     };
   }, [connections, createThreadedConnection, drawingLine, getSourceCardId]);
 
+  const getRemoteDraft = useCallback((cardId: string) => {
+    const draft = liveCardDrafts[cardId];
+    if (!draft || !draft.isActive || draft.userId === currentUserId || editingCardId === cardId) {
+      return null;
+    }
+    return draft;
+  }, [currentUserId, editingCardId, liveCardDrafts]);
+
+  const showCardLockedToast = useCallback((cardId: string) => {
+    const draft = getRemoteDraft(cardId);
+    if (draft) {
+      showToast(`${draft.userName} is editing this card`);
+    }
+    return !!draft;
+  }, [getRemoteDraft, showToast]);
+
   const handleDragStart = (e: React.DragEvent, cardId: string) => {
     if (!isEditMode) return;
+    if (showCardLockedToast(cardId)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     setDraggedCardId(cardId);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -564,6 +587,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     setDragOverCardId(null);
     setDragOverColId(null);
     if (!draggedCardId || draggedCardId === targetCardId || !isEditMode) return;
+    if (showCardLockedToast(draggedCardId) || showCardLockedToast(targetCardId)) return;
 
     const newCards = [...cards];
     const sourceIndex = newCards.findIndex(c => c.id === draggedCardId);
@@ -600,6 +624,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     setDragOverColId(null);
     setDragOverCardId(null);
     if (!draggedCardId || !isEditMode) return;
+    if (showCardLockedToast(draggedCardId)) return;
 
     const newCards = [...cards];
     const sourceIndex = newCards.findIndex(c => c.id === draggedCardId);
@@ -671,12 +696,14 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
 
   const handleUpdateCard = (cardId: string, content: string) => {
     if (!isEditMode) return;
+    if (showCardLockedToast(cardId)) return;
     
     // Prevent infinite loop by returning early if content hasn't changed
     const card = cards.find(c => c.id === cardId);
     if (!card || card.content === content) return;
 
     setCards(cards.map(c => c.id === cardId ? { ...c, content } : c));
+    onCardDraft?.(cardId, content, false);
     if (onCardUpdate) {
       onCardUpdate(cardId, { content }).catch((error) => {
         console.error('Error updating card:', error);
@@ -690,16 +717,20 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       showToast('Enter password to edit cards');
       return;
     }
+    if (showCardLockedToast(card.id)) return;
     
     setEditingCardId(card.id);
     setEditContent(card.content);
+    onCardDraft?.(card.id, card.content, true);
   };
 
   const handleSaveEdit = async (cardId: string) => {
     if (!isEditMode) return;
+    if (showCardLockedToast(cardId)) return;
     
     // Update local state
     setCards(cards.map(c => c.id === cardId ? { ...c, content: editContent } : c));
+    onCardDraft?.(cardId, editContent, false);
     
     // Call API to persist if callback provided
     if (onCardUpdate) {
@@ -716,6 +747,10 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
   };
 
   const handleCancelEdit = () => {
+    if (editingCardId) {
+      const card = cards.find((item) => item.id === editingCardId);
+      onCardDraft?.(editingCardId, card?.content || '', false);
+    }
     setEditingCardId(null);
     setEditContent('');
   };
@@ -751,8 +786,14 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     }
   }, [editContent, editingCardId]);
 
+  const handleEditContentChange = (cardId: string, content: string) => {
+    setEditContent(content);
+    onCardDraft?.(cardId, content, true);
+  };
+
   const handleGenerateSingle = async (cardId: string, colId: string) => {
     if (!isEditMode) return;
+    if (showCardLockedToast(cardId)) return;
     
     setGeneratingCards(prev => ({ ...prev, [cardId]: true }));
     try {
@@ -868,7 +909,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       .filter(({ lastNodeId }) => !terminalCardId || lastNodeId === terminalCardId);
 
     if (threadStories.length === 0) {
-      showToast('Connect this Call to Action card to the selected thread before assembling a story.');
+      showToast('Connect this How do we get there? card to the selected thread before assembling a story.');
       return;
     }
 
@@ -977,6 +1018,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       showToast('Enter password to delete cards');
       return;
     }
+    if (showCardLockedToast(cardId)) return;
 
     try {
       await deleteConnections(getCardDeleteCleanupConnectionIds(cardId));
@@ -988,15 +1030,16 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       console.error('Error deleting card:', error);
       showToast('Failed to delete card');
     }
-  }, [deleteConnections, getCardDeleteCleanupConnectionIds, isEditMode, onCardDelete, showToast]);
+  }, [deleteConnections, getCardDeleteCleanupConnectionIds, isEditMode, onCardDelete, showCardLockedToast, showToast]);
 
   const requestDeleteCard = useCallback((cardId: string) => {
     if (!isEditMode) {
       showToast('Enter password to delete cards');
       return;
     }
+    if (showCardLockedToast(cardId)) return;
     setPendingDeleteCardId((current) => current === cardId ? null : cardId);
-  }, [isEditMode, showToast]);
+  }, [isEditMode, showCardLockedToast, showToast]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -1097,12 +1140,13 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                   <h3 className="font-bold text-center mb-4 text-lg pointer-events-none">{col.title}</h3>
                   {columnCards.map((card, cardIdx) => {
                     const storyCardLane = card.section === 'story' ? getStoryCardLane(card.id) : null;
+                    const remoteDraft = getRemoteDraft(card.id);
                     return (
                       <div
                       key={card.id}
                       id={`card-${card.id}`}
                       data-card-id={card.id}
-                      draggable={isEditMode}
+                      draggable={isEditMode && !remoteDraft}
                       onDragStart={(e) => handleDragStart(e, card.id)}
                       onDragOver={(e) => handleDragOverCard(e, card.id)}
                       onDrop={(e) => handleDropOnCard(e, card.id, col.id)}
@@ -1115,6 +1159,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       onPointerDown={(e) => {
                         // Shift+drag on card body starts a card-to-card connection
                         if (!isEditMode || !e.shiftKey) return;
+                        if (showCardLockedToast(card.id)) return;
                         if (!canStartConnectionFromCard(card.id, activeThreadLane)) {
                           showToast(`This column already has a selected card in the ${activeThreadLane.label.toLowerCase()} thread`);
                           return;
@@ -1137,7 +1182,8 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       }}
                       className={`relative p-5 rounded-xl text-sm cursor-grab active:cursor-grabbing transition-all duration-200 group
                         ${storyCardLane ? THREAD_STORY_CARD_COLORS[storyCardLane.id] : col.color}
-                        ${selectedCard === card.id ? 'ring-2 ring-indigo-500 shadow-lg scale-[1.02]' : 'hover:shadow-md border border-black/5'}
+                        ${col.id === 'change' && selectedCard === card.id ? 'border-black' : ''}
+                        ${selectedCard === card.id ? 'ring-2 ring-indigo-500 shadow-lg scale-[1.02]' : col.id === 'change' ? 'hover:shadow-md' : 'hover:shadow-md border border-black/5'}
                         ${col.id === 'story' ? 'min-h-[227px] text-base p-6 flex items-start justify-start text-left rounded-3xl' : col.id === 'change' ? 'min-h-[170px] flex items-start justify-start text-left rounded-3xl' : 'min-h-[170px]'}
                         ${draggedCardId === card.id ? 'opacity-50 ring-2 ring-indigo-500 scale-105 shadow-2xl z-50' : ''}
                         ${dragOverCardId === card.id ? 'border-t-4 border-t-indigo-500 pt-6' : ''}
@@ -1147,16 +1193,17 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         <React.Fragment key={lane.id}>
                           <div
                             id={`node-left-${lane.id}-${card.id}`}
-                            className={`absolute left-0 z-50 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair transition-all duration-150 ${
+                            className={`absolute left-0 z-[60] flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair transition-all duration-150 ${
                               col.id === 'place' ? 'opacity-0 pointer-events-none' : storyCardLane ? 'opacity-100' : getPortVisibilityClass(card.id, lane, 'left')
                             }`}
                             style={{ top: `${24 + THREAD_LANES.indexOf(lane) * 13}%` }}
                             title={`${lane.label} incoming connection`}
                             onPointerDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              if (!isEditMode) return;
-                              setActiveThreadLane(lane);
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (!isEditMode) return;
+                                  if (showCardLockedToast(card.id)) return;
+                                  setActiveThreadLane(lane);
                               if (!canStartConnectionFromCard(card.id, lane)) {
                                 showToast(`This column already has a selected card in the ${lane.label.toLowerCase()} thread`);
                                 return;
@@ -1209,7 +1256,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                             <button
                               type="button"
                               id={`node-right-${lane.id}-${card.id}`}
-                              className={`absolute right-0 z-50 flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent transition-all duration-150 ${
+                              className={`absolute right-0 z-[60] flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent transition-all duration-150 ${
                                 canAssembleFromCallToActionCard(card.id, lane) || hasLaneOutgoingConnection(card.id, lane)
                                   ? 'opacity-100 scale-110'
                                   : 'pointer-events-none opacity-0'
@@ -1244,16 +1291,17 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                           ) : (
                             <div
                               id={`node-right-${lane.id}-${card.id}`}
-                              className={`absolute right-0 z-50 flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair transition-all duration-150 ${
+                              className={`absolute right-0 z-[60] flex h-8 w-8 translate-x-1/2 items-center justify-center rounded-full bg-transparent cursor-crosshair transition-all duration-150 ${
                                 col.id === 'story' ? 'opacity-0 pointer-events-none' : getPortVisibilityClass(card.id, lane, 'right')
                               }`}
                               style={{ top: `${24 + THREAD_LANES.indexOf(lane) * 13}%` }}
                               title={`${lane.label} outgoing connection`}
                               onPointerDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                if (!isEditMode) return;
-                                setActiveThreadLane(lane);
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (!isEditMode) return;
+                                  if (showCardLockedToast(card.id)) return;
+                                  setActiveThreadLane(lane);
                                 if (!canStartConnectionFromCard(card.id, lane)) {
                                   showToast(`This column already has a selected card in the ${lane.label.toLowerCase()} thread`);
                                   return;
@@ -1347,7 +1395,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                           <textarea
                             autoFocus
                             value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
+                            onChange={(e) => handleEditContentChange(card.id, e.target.value)}
                             onInput={(e) => {
                               const el = e.currentTarget;
                               el.style.height = 'auto';
@@ -1376,16 +1424,32 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                             </button>
                           )}
                         </div>
-                      ) : card.content ? (
+                      ) : card.content || remoteDraft ? (
                         <div className={`${card.starred ? 'mt-5' : ''} font-medium leading-snug text-gray-900 pb-2 whitespace-pre-wrap`}>
-                          {card.content}
+                          <div className={remoteDraft ? 'text-gray-900' : ''}>
+                            {remoteDraft?.content ?? card.content}
+                          </div>
+                          {remoteDraft && (
+                            <div
+                              className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-gray-500 shadow-sm ring-1 ring-black/5"
+                              title={`${remoteDraft.userName} is editing this card`}
+                            >
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: remoteDraft.userColor }}
+                              />
+                              <span className="truncate">{remoteDraft.userName} is typing</span>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2 mt-2" onClick={e => e.stopPropagation()}>
                           <textarea
                             autoFocus
+                            value={editingCardId === card.id ? editContent : ''}
                             placeholder="Type your idea..."
                             className="w-full bg-transparent font-medium leading-snug text-gray-900 resize-none outline-none cursor-text whitespace-pre-wrap break-words overflow-hidden"
+                            onChange={(e) => handleEditContentChange(card.id, e.target.value)}
                             onInput={(e) => {
                               const el = e.currentTarget;
                               el.style.height = 'auto';
@@ -1398,7 +1462,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
-                                handleUpdateCard(card.id, e.currentTarget.value);
+                                handleUpdateCard(card.id, editContent || e.currentTarget.value);
                               }
                             }}
                           />

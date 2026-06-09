@@ -286,7 +286,7 @@ export default function TopBar({
   }, [showHelp]);
 
   return (
-    <div className="h-20 bg-gray-50 border-b border-gray-200 flex items-center px-6 shrink-0">
+    <div className="h-16 bg-gray-50 border-b border-gray-200 flex items-center px-6 shrink-0">
       {/* Left: site brand */}
       <div className="flex items-center gap-3 pr-4 shrink-0">
         <span className="text-base font-bold text-black">SQD + BDO</span>

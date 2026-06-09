@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import PartySocket from 'partysocket';
-import type { Message, UserPresence, LiveConnection } from '../../party/index';
+import type { Message, UserPresence, LiveConnection, CardDraft } from '../../party/index';
 import type { CardData, ConnectionData, SessionNote } from '../types';
 import { createDefaultTimerState, type SharedTimerState, type TimerCommand, type TimerControlMode } from '../config/timer';
 import {
@@ -19,6 +19,7 @@ interface UsePartyKitOptions {
   sessionSettingsToken?: string | null;
   onCardCreate?: (card: CardData) => void;
   onCardUpdate?: (cardId: string, updates: Partial<CardData>) => void;
+  onCardDraft?: (draft: CardDraft) => void;
   onCardDelete?: (cardId: string) => void;
   onCardReorder?: (section: string, cardIds: string[]) => void;
   onConnectionCreate?: (connection: ConnectionData) => void;
@@ -41,6 +42,7 @@ interface UsePartyKitReturn {
   connectionRole: 'admin' | 'participant' | null;
   sendCardCreate: (card: CardData) => void;
   sendCardUpdate: (cardId: string, updates: Partial<CardData>) => void;
+  sendCardDraft: (cardId: string, content: string, isActive?: boolean) => void;
   sendCardDelete: (cardId: string) => void;
   sendCardReorder: (section: string, cardIds: string[]) => void;
   sendConnectionCreate: (connection: ConnectionData) => void;
@@ -64,6 +66,7 @@ export function usePartyKit({
   sessionSettingsToken,
   onCardCreate,
   onCardUpdate,
+  onCardDraft,
   onCardDelete,
   onCardReorder,
   onConnectionCreate,
@@ -88,9 +91,11 @@ export function usePartyKit({
   const adminTokenRef = useRef(adminToken);
   const sessionSettingsTokenRef = useRef(sessionSettingsToken);
   const lastCursorSentAtRef = useRef(0);
+  const lastDraftSentAtRef = useRef(0);
   const callbacksRef = useRef({
     onCardCreate,
     onCardUpdate,
+    onCardDraft,
     onCardDelete,
     onCardReorder,
     onConnectionCreate,
@@ -129,6 +134,7 @@ export function usePartyKit({
     callbacksRef.current = {
       onCardCreate,
       onCardUpdate,
+      onCardDraft,
       onCardDelete,
       onCardReorder,
       onConnectionCreate,
@@ -142,6 +148,7 @@ export function usePartyKit({
   }, [
     onCardCreate,
     onCardDelete,
+    onCardDraft,
     onCardReorder,
     onCardUpdate,
     onConnectionCreate,
@@ -219,6 +226,12 @@ export function usePartyKit({
           case 'card:update':
             if (data.userId !== userId && callbacksRef.current.onCardUpdate) {
               callbacksRef.current.onCardUpdate(data.cardId, data.updates);
+            }
+            break;
+
+          case 'card:draft':
+            if (data.userId !== userId && callbacksRef.current.onCardDraft) {
+              callbacksRef.current.onCardDraft(data.draft);
             }
             break;
 
@@ -375,6 +388,33 @@ export function usePartyKit({
         cardId,
         updates,
         timestamp: Date.now(),
+        userId,
+      };
+      socketRef.current.send(JSON.stringify(message));
+    }
+  }, [userId]);
+
+  const sendCardDraft = useCallback((cardId: string, content: string, isActive = true) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      const now = Date.now();
+      if (isActive && now - lastDraftSentAtRef.current < 40) {
+        return;
+      }
+      lastDraftSentAtRef.current = now;
+
+      const message: Message = {
+        type: 'card:draft',
+        cardId,
+        draft: {
+          cardId,
+          content,
+          userId,
+          userName: userPresenceRef.current.name,
+          userColor: userPresenceRef.current.color,
+          isActive,
+          timestamp: now,
+        },
+        timestamp: now,
         userId,
       };
       socketRef.current.send(JSON.stringify(message));
@@ -542,6 +582,7 @@ export function usePartyKit({
     connectionRole,
     sendCardCreate,
     sendCardUpdate,
+    sendCardDraft,
     sendCardDelete,
     sendCardReorder,
     sendConnectionCreate,
