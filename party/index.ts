@@ -342,9 +342,8 @@ export default class SessionServer implements Party.Server {
     };
   }
 
-  private canControlTimer(sender: Party.Connection): boolean {
-    const senderState = this.getConnectionState(sender);
-    return senderState.role === "admin" || this.timer.controlMode === "everyone";
+  private canControlTimer(_sender: Party.Connection): boolean {
+    return true;
   }
 
   private broadcastTimerUpdate(userId: string): void {

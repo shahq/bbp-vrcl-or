@@ -23,7 +23,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
 import { apiUrl } from './config/api';
 import { useConfirmDialog } from './components/ConfirmDialog';
-import { normalizeTimerControlMode, type TimerControlMode } from './config/timer';
+import type { TimerControlMode } from './config/timer';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 
 // Session types
@@ -218,47 +218,6 @@ function Dashboard() {
     }
   };
 
-  const updateSessionTimerControl = async (sessionId: string, timerControlMode: TimerControlMode) => {
-    try {
-      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-session': adminSessionId!
-        },
-        body: JSON.stringify({ timer_control_mode: timerControlMode })
-      });
-
-      if (response.status === 401) {
-        await handleExpiredAdminSession();
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        showToast(errorData.error || 'Failed to update timer controls');
-        return;
-      }
-
-      const data = await response.json();
-      setAllSessions((prev) =>
-        prev.map((session) =>
-          session.id === sessionId
-            ? {
-              ...session,
-              timer_control_mode: normalizeTimerControlMode(data.session?.timer_control_mode ?? timerControlMode),
-              partykit_session_token: data.session?.partykit_session_token ?? session.partykit_session_token,
-            }
-            : session
-        )
-      );
-      showToast('Timer controls updated');
-    } catch (error) {
-      console.error('Error updating timer controls:', error);
-      showToast('Failed to update timer controls');
-    }
-  };
-
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden">
       {dialog}
@@ -421,18 +380,7 @@ function Dashboard() {
                           <span>&bull;</span>
                           <span>{session.onboarding_completed ? 'Ready' : 'Onboarding'}</span>
                           <span>&bull;</span>
-                          <label className="flex items-center gap-1 text-xs text-gray-500">
-                            Timer
-                            <select
-                              value={normalizeTimerControlMode(session.timer_control_mode)}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => updateSessionTimerControl(session.id, event.target.value as TimerControlMode)}
-                              className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            >
-                              <option value="admin">Admin only</option>
-                              <option value="everyone">Everyone</option>
-                            </select>
-                          </label>
+                          <span className="text-xs text-gray-500">Timer shared</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -744,7 +692,6 @@ function SessionView() {
     sendProjectUpdate,
     sendNoteUpdate,
     sendTimerCommand,
-    sendTimerSettings,
   } = usePartyKit({
     sessionId: canConnectPartyKit ? partySessionId : null,
     userId: partyUserId,
@@ -902,45 +849,6 @@ function SessionView() {
     setShowPasswordWall(false);
     setIsEditMode(true);
   }, [currentSession, isAdminVerified]);
-
-  const handleTimerControlModeChange = useCallback(async (timerControlMode: TimerControlMode) => {
-    if (!sessionId || !isAdminVerified || !adminSessionId) return;
-
-    try {
-      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-session': adminSessionId,
-        },
-        body: JSON.stringify({ timer_control_mode: timerControlMode }),
-      });
-
-      if (response.status === 401) {
-        await handleExpiredAdminSession();
-        return;
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        showToast(errorData.error || 'Failed to update timer controls');
-        return;
-      }
-
-      const data = await response.json();
-      const nextSession = data.session;
-      setCurrentSession((prev) => prev ? {
-        ...prev,
-        timer_control_mode: normalizeTimerControlMode(nextSession?.timer_control_mode ?? timerControlMode),
-        partykit_session_token: nextSession?.partykit_session_token ?? prev.partykit_session_token,
-      } : prev);
-      sendTimerSettings(normalizeTimerControlMode(nextSession?.timer_control_mode ?? timerControlMode));
-      showToast('Timer controls updated');
-    } catch (error) {
-      console.error('Error updating timer controls:', error);
-      showToast('Failed to update timer controls');
-    }
-  }, [adminSessionId, handleExpiredAdminSession, isAdminVerified, sendTimerSettings, sessionId]);
 
   const handleCreateAdminSession = useCallback(async (name: string, requirePassword: boolean) => {
     if (!isAdminVerified || !adminSessionId) return;
@@ -1432,6 +1340,60 @@ function SessionView() {
     setIsUploadingAttachments(true);
     try {
       for (const file of Array.from(files)) {
+        const directTargetResponse = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/upload-target`), {
+          method: 'POST',
+          headers: getEditRequestHeaders({
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify(getEditRequestBody({
+            name: file.name,
+            mimeType: file.type,
+          })),
+        });
+
+        if (directTargetResponse.ok) {
+          const target = await directTargetResponse.json();
+          const uploadResponse = await fetch(target.uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': file.type || 'application/octet-stream',
+            },
+            body: file,
+          });
+
+          if (!uploadResponse.ok) {
+            throw new Error(`Upload failed for "${file.name}"`);
+          }
+
+          const uploadData = await uploadResponse.json();
+          const finalizeResponse = await fetch(apiUrl(`/api/sessions/${sessionId}/attachments/finalize-upload`), {
+            method: 'POST',
+            headers: getEditRequestHeaders({
+              'Content-Type': 'application/json',
+            }),
+            body: JSON.stringify(getEditRequestBody({
+              name: file.name,
+              mimeType: file.type,
+              storageId: uploadData.storageId,
+              size: file.size,
+            })),
+          });
+
+          if (!finalizeResponse.ok) {
+            const errorData = await finalizeResponse.json().catch(() => ({ error: 'Upload failed' }));
+            throw new Error(errorData.error || `Upload failed for "${file.name}"`);
+          }
+
+          const data = await finalizeResponse.json();
+          setAttachments((prev) => [data.attachment, ...prev]);
+          continue;
+        }
+
+        if (![404, 501].includes(directTargetResponse.status)) {
+          const errorData = await directTargetResponse.json().catch(() => ({ error: 'Upload failed' }));
+          throw new Error(errorData.error || `Upload failed for "${file.name}"`);
+        }
+
         const dataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(String(reader.result || ""));
@@ -2053,9 +2015,8 @@ function SessionView() {
 
   const showBriefWorkspace = !currentSession.onboarding_completed || workspaceView === 'brief';
   const showCanvasWorkspace = currentSession.onboarding_completed && !showBriefWorkspace;
-  const timerControlMode = normalizeTimerControlMode(currentSession.timer_control_mode);
   const liveTimerAvailable = showCanvasWorkspace && isConnected;
-  const canControlLiveTimer = isAdminVerified || connectionRole === 'admin' || timerState.controlMode === 'everyone';
+  const canControlLiveTimer = liveTimerAvailable;
 
   return (
     <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden antialiased">
@@ -2089,7 +2050,6 @@ function SessionView() {
         activeConnections={liveConnections}
         currentConnectionId={currentConnectionId || ''}
         onKickUser={connectionRole === 'admin' ? handleKickUser : undefined}
-        onTimerControlModeChange={handleTimerControlModeChange}
         presenceDebug={presenceDebug}
       />
 
@@ -2101,7 +2061,6 @@ function SessionView() {
           onTutorialSelect={setActiveTutorial}
           sharedTimer={liveTimerAvailable ? timerState : undefined}
           canControlTimer={canControlLiveTimer}
-          timerControlMode={timerControlMode}
           onTimerCommand={liveTimerAvailable ? sendTimerCommand : undefined}
           rightContent={
             <div className="flex items-center gap-2">

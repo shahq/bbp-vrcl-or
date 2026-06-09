@@ -118,13 +118,12 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="shazam!"
+                  placeholder="password"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent pr-10 text-base"
                   disabled={isLoading}
                 />
                 <Lock size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Hint: It's "shazam!"</p>
             </div>
 
             <button

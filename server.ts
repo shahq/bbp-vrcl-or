@@ -473,10 +473,9 @@ function parseImportedCard(cardText: string, fallbackOrder: number): ImportedCar
   };
 }
 
-async function startServer() {
+export async function createApp() {
   const { adminAuth, sessions, cards, connections, sessionFiles, attachments, notes } = getCurrentBackend();
   const app = express();
-  const PORT = Number(process.env.PORT || 3000);
   const distDir = path.join(process.cwd(), "dist");
   const allowedOrigins = getAllowedOrigins();
 
@@ -944,12 +943,13 @@ async function startServer() {
         mimeType || detectedMimeType || "application/octet-stream"
       );
       cleanupAttachmentFile = saved.cleanup;
-      const extracted = await extractAttachmentContent(saved.fullPath);
+      const resolvedMimeType = mimeType || detectedMimeType || "application/octet-stream";
+      const extracted = await extractAttachmentContent(saved.fullPath, resolvedMimeType);
 
       const attachment: ProjectAttachment = {
         id: `attachment-${Date.now()}`,
         name,
-        mimeType: mimeType || detectedMimeType || "application/octet-stream",
+        mimeType: resolvedMimeType,
         size: buffer.byteLength,
         uploadedAt: new Date().toISOString(),
         relativePath: saved.relativePath,
@@ -964,6 +964,84 @@ async function startServer() {
       res.status(201).json({ attachment });
     } catch (error: any) {
       console.error("Error uploading attachment:", error);
+      res.status(500).json({ error: error.message });
+    } finally {
+      await cleanupAttachmentFile?.();
+    }
+  });
+
+  app.post("/api/sessions/:id/attachments/upload-target", requireEditPermission, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, mimeType } = req.body;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      if (!name) {
+        return res.status(400).json({ error: "Attachment name is required" });
+      }
+
+      if (!attachments.createDirectUploadTarget) {
+        return res.status(501).json({ error: "Direct attachment upload is not configured for this attachment provider" });
+      }
+
+      const target = await attachments.createDirectUploadTarget(id, name, mimeType || "application/octet-stream");
+      res.json(target);
+    } catch (error: any) {
+      console.error("Error creating attachment upload target:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/sessions/:id/attachments/finalize-upload", requireEditPermission, async (req, res) => {
+    let cleanupAttachmentFile: (() => Promise<void> | void) | undefined;
+    try {
+      const { id } = req.params;
+      const { name, mimeType, storageId, size } = req.body;
+      const session = await sessions.getSession(id);
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      if (!name || !storageId) {
+        return res.status(400).json({ error: "Attachment name and storageId are required" });
+      }
+
+      if (!attachments.prepareDirectUploadedFile) {
+        return res.status(501).json({ error: "Direct attachment upload is not configured for this attachment provider" });
+      }
+
+      const resolvedMimeType = mimeType || "application/octet-stream";
+      const saved = await attachments.prepareDirectUploadedFile(id, name, storageId);
+      cleanupAttachmentFile = saved.cleanup;
+      const extracted = await extractAttachmentContent(saved.fullPath, resolvedMimeType);
+      const uploadedSize = Number(size);
+      const attachmentSize = Number.isFinite(uploadedSize) && uploadedSize > 0
+        ? uploadedSize
+        : (await attachments.readAttachmentFile(id, saved.relativePath)).byteLength;
+
+      const attachment: ProjectAttachment = {
+        id: `attachment-${Date.now()}`,
+        name,
+        mimeType: resolvedMimeType,
+        size: attachmentSize,
+        uploadedAt: new Date().toISOString(),
+        relativePath: saved.relativePath,
+        extractionStatus: extracted.extractionStatus,
+        extractedText: extracted.extractedText,
+        summary: extracted.summary,
+        note: "",
+      };
+
+      await attachments.saveAttachment(id, attachment);
+
+      res.status(201).json({ attachment });
+    } catch (error: any) {
+      console.error("Error finalizing direct attachment upload:", error);
       res.status(500).json({ error: error.message });
     } finally {
       await cleanupAttachmentFile?.();
@@ -1853,10 +1931,19 @@ async function startServer() {
     });
   }
 
+  return app;
+}
+
+async function startServer() {
+  const app = await createApp();
+  const PORT = Number(process.env.PORT || 3000);
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`📁 Session data stored in: ${path.join(process.cwd(), 'data')}`);
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}

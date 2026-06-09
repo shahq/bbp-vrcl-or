@@ -19,7 +19,7 @@ export interface SharedTimerState {
   updatedBy?: string;
 }
 
-export const DEFAULT_TIMER_CONTROL_MODE: TimerControlMode = "admin";
+export const DEFAULT_TIMER_CONTROL_MODE: TimerControlMode = "everyone";
 export const DEFAULT_TIMER_DURATION_MS = 90 * 1000;
 export const MAX_TIMER_DURATION_MS = ((90 * 60) + 59) * 1000;
 
@@ -90,7 +90,7 @@ export function applyTimerCommand(
     }
 
     case "start": {
-      const remainingMs = getTimerRemainingMs(timer, now) || clampTimerDurationMs(timer.durationMs);
+      const remainingMs = getTimerRemainingMs(timer, now) || clampTimerDurationMs(timer.durationMs) || DEFAULT_TIMER_DURATION_MS;
       if (remainingMs <= 0) {
         return {
           ...timer,
@@ -125,15 +125,18 @@ export function applyTimerCommand(
       };
     }
 
-    case "reset":
+    case "reset": {
+      const durationMs = clampTimerDurationMs(timer.durationMs) || DEFAULT_TIMER_DURATION_MS;
       return {
         ...timer,
         status: "idle",
-        remainingMs: clampTimerDurationMs(timer.durationMs),
+        durationMs,
+        remainingMs: durationMs,
         startedAt: undefined,
         endsAt: undefined,
         updatedAt: now,
         updatedBy,
       };
+    }
   }
 }

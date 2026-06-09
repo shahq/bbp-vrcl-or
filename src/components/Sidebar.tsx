@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, Cpu, Plus, Trash2, Lock, Unlock, Download, LogOut, Shield, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { ModelType } from '../services/ai';
 import type { LiveConnection } from '../../party/index';
-import { normalizeTimerControlMode, type TimerControlMode } from '../config/timer';
+import type { TimerControlMode } from '../config/timer';
 
 interface Session {
   id: string;
@@ -40,7 +40,6 @@ interface SidebarProps {
   activeConnections?: LiveConnection[];
   currentConnectionId?: string;
   onKickUser?: (connectionId: string, userId?: string | null) => Promise<void>;
-  onTimerControlModeChange?: (mode: TimerControlMode) => Promise<void>;
   presenceDebug?: string;
 }
 
@@ -62,7 +61,6 @@ export default function Sidebar({
   activeConnections = [],
   currentConnectionId = '',
   onKickUser,
-  onTimerControlModeChange,
   presenceDebug
 }: SidebarProps) {
   const [isCreating, setIsCreating] = useState(false);
@@ -278,18 +276,12 @@ export default function Sidebar({
 
             <div className="px-3 pb-3">
               <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                  Timer Control
-                </label>
-                <select
-                  value={normalizeTimerControlMode(currentSession.timer_control_mode)}
-                  onChange={(event) => onTimerControlModeChange?.(event.target.value as TimerControlMode)}
-                  disabled={!onTimerControlModeChange}
-                  className="mt-1 w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
-                >
-                  <option value="admin">Admin only</option>
-                  <option value="everyone">Everyone</option>
-                </select>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  Shared Timer
+                </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  Everyone in this session can set, start, pause, and reset the timer.
+                </p>
               </div>
 
               {visibleConnections.length === 0 ? (

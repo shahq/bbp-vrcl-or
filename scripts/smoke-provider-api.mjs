@@ -65,7 +65,7 @@ async function main() {
   assert(typeof sessionId === "string" && sessionId.length > 0, "Create session did not return session.id");
   createdSessionIds.push(sessionId);
   assert(create.session.has_password === false, "Created open session should not have a password");
-  assert(create.session.timer_control_mode === "admin", "Created session should default timer_control_mode to admin");
+  assert(create.session.timer_control_mode === "everyone", "Created session should default timer_control_mode to everyone");
 
   const cardA = await request(`/api/sessions/${sessionId}/cards`, {
     method: "POST",
@@ -112,7 +112,8 @@ async function main() {
   assert(readSession.cards.some((card) => card.id === cardAId), "Session read did not include card A");
   assert(readSession.cards.some((card) => card.id === cardBId), "Session read did not include card B");
   assert(readSession.connections.some((item) => item.id === connectionId), "Session read did not include connection");
-  assert(Array.isArray(readSession.notes), "Session read did not include notes array");
+  const readNotes = await request(`/api/sessions/${sessionId}/notes`);
+  assert(Array.isArray(readNotes.notes), "Notes endpoint did not include notes array");
 
   const deleteConnection = await request(`/api/sessions/${sessionId}/connections/${connectionId}`, {
     method: "DELETE",

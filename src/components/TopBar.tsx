@@ -19,7 +19,6 @@ import {
   getTimerRemainingMs,
   type SharedTimerState,
   type TimerCommand,
-  type TimerControlMode,
 } from "../config/timer";
 
 interface TopBarProps {
@@ -32,7 +31,6 @@ interface TopBarProps {
   showTimer?: boolean;
   sharedTimer?: SharedTimerState;
   canControlTimer?: boolean;
-  timerControlMode?: TimerControlMode;
   onTimerCommand?: (command: TimerCommand) => void;
 }
 
@@ -46,7 +44,6 @@ export default function TopBar({
   showTimer = true,
   sharedTimer,
   canControlTimer = true,
-  timerControlMode = "admin",
   onTimerCommand,
 }: TopBarProps) {
   const defaultTimerMinutes = Math.floor(DEFAULT_TIMER_DURATION_MS / 60000);
@@ -133,9 +130,7 @@ export default function TopBar({
     : isRunning;
   const timerControlsDisabled = isSharedTimer && !canControlTimer;
   const timerTitle = isSharedTimer
-    ? timerControlMode === "everyone"
-      ? "Live timer: everyone can control"
-      : "Live timer: admin controls"
+    ? "Live timer: everyone can control"
     : "Local timer";
 
   useEffect(() => {
@@ -301,9 +296,6 @@ export default function TopBar({
           </div>
           <div className="text-sm font-medium text-gray-900 underline decoration-gray-300 underline-offset-4">
             Beyond Bulletpoints: The Unfair Advantage
-          </div>
-          <div className="text-sm font-bold text-gray-900 uppercase mt-1">
-            {projectName || "PROJECT NAME"}
           </div>
         </div>
       )}

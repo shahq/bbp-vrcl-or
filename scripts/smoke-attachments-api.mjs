@@ -35,6 +35,21 @@ async function request(path, options = {}) {
   return data;
 }
 
+async function requestBuffer(path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      ...(adminSessionId ? { "x-admin-session": adminSessionId } : {}),
+      ...(smokeRequestCookie ? { Cookie: smokeRequestCookie } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`${options.method || "GET"} ${path} failed (${response.status}): ${await response.text()}`);
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function cleanup() {
   for (const sessionId of createdSessionIds.reverse()) {
     try {
@@ -53,6 +68,31 @@ function zipDataUrl(buffer) {
   return `data:application/zip;base64,${Buffer.from(buffer).toString("base64")}`;
 }
 
+function binaryDataUrl(mimeType, buffer) {
+  return `data:${mimeType};base64,${Buffer.from(buffer).toString("base64")}`;
+}
+
+async function createDocxBuffer(text) {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>
+  </w:body>
+</w:document>`);
+  return await zip.generateAsync({ type: "nodebuffer" });
+}
+
 function assertAttachmentShape(attachment, expectedName) {
   assert(attachment?.id, "Upload did not return attachment.id");
   assert(attachment.name === expectedName, "Upload did not preserve attachment name");
@@ -66,6 +106,14 @@ function assertAttachmentShape(attachment, expectedName) {
     );
   }
   assert(["ready", "unsupported", "error"].includes(attachment.extractionStatus), "Upload returned invalid extractionStatus");
+}
+
+function assertAttachmentContent(attachment, expectedText, label) {
+  assert(attachment.extractionStatus === "ready", `${label} extraction was not ready`);
+  assert(
+    typeof attachment.extractedText === "string" && attachment.extractedText.includes(expectedText),
+    `${label} extractedText did not include expected content`
+  );
 }
 
 async function assertAttachmentListed(sessionId, attachmentId) {
@@ -163,7 +211,33 @@ async function main() {
   });
   const attachment = upload.attachment;
   assertAttachmentShape(attachment, "source-notes.txt");
+  assertAttachmentContent(attachment, "Source text attachment smoke verification.", "Text attachment");
   await assertAttachmentListed(sessionId, attachment.id);
+
+  const pdfBuffer = await requestBuffer(`/api/sessions/${sessionId}/export/pdf`);
+  const pdfUpload = await request(`/api/sessions/${sessionId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: "source-export.pdf",
+      mimeType: "application/pdf",
+      dataUrl: binaryDataUrl("application/pdf", pdfBuffer),
+    }),
+  });
+  assertAttachmentContent(pdfUpload.attachment, "Beyond Bullet Points", "PDF attachment");
+  await assertAttachmentListed(sessionId, pdfUpload.attachment.id);
+
+  const docxPhrase = `Word attachment smoke verification ${Date.now()}`;
+  const docxBuffer = await createDocxBuffer(docxPhrase);
+  const docxUpload = await request(`/api/sessions/${sessionId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: "source-brief.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      dataUrl: binaryDataUrl("application/vnd.openxmlformats-officedocument.wordprocessingml.document", docxBuffer),
+    }),
+  });
+  assertAttachmentContent(docxUpload.attachment, docxPhrase, "Word attachment");
+  await assertAttachmentListed(sessionId, docxUpload.attachment.id);
 
   if (smokeDirectUpload) {
     const directText = "Source text uploaded directly through Convex storage.";

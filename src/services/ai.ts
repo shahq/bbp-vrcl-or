@@ -49,6 +49,28 @@ function assertValidSingleAct1Idea(section: string, content: string) {
   }
 }
 
+function limitAttachmentText(value: string | undefined, limit = 2_500): string {
+  const text = (value || '').trim();
+  return text.length > limit ? `${text.slice(0, limit)}\n[Excerpt truncated]` : text;
+}
+
+function formatChatAttachmentContext(attachments: ChatGenerationContext['attachments']): string {
+  if (!attachments || attachments.length === 0) {
+    return '      * none';
+  }
+
+  return attachments.map((attachment) => {
+    const summary = attachment.summary?.trim() || 'No summary available.';
+    const extractedText = limitAttachmentText(attachment.extractedText);
+    return [
+      `      * ${attachment.name}`,
+      `        Summary: ${summary}`,
+      attachment.note?.trim() ? `        Note: ${attachment.note.trim()}` : '',
+      extractedText ? `        Extracted text excerpt: ${extractedText}` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n');
+}
+
 function buildAct1CardGenerationInstructions() {
   return `
     ACT 1 generation rules:
@@ -530,9 +552,7 @@ export async function generateChatResponse(client: string, background: string, n
     - Can Edit: ${context?.canEdit ? 'yes' : 'no'}
     - Selected Card: ${context?.selectedCard ? `${context.selectedCard.section} :: ${context.selectedCard.content}` : 'none'}
     - Uploaded context sources:
-${(context?.attachments && context.attachments.length > 0)
-  ? context.attachments.map((attachment) => `      * ${attachment.name}: ${attachment.summary}${attachment.note ? `\n        Note: ${attachment.note}` : ''}`).join('\n')
-  : '      * none'}
+${formatChatAttachmentContext(context?.attachments)}
 
     Behavior rules:
     - Be context aware and refer to the current screen and selection when helpful.
