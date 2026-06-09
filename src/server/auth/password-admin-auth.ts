@@ -1,5 +1,6 @@
 import * as admin from "../admin";
 import type { AdminAuthProvider } from "../backend/types";
+import { createPartyKitSessionSettingsToken } from "../realtimeTokens";
 
 export const passwordAdminAuthProvider: AdminAuthProvider = {
   cleanupExpiredSessions: admin.cleanupExpiredSessions,
@@ -9,5 +10,6 @@ export const passwordAdminAuthProvider: AdminAuthProvider = {
   isAdminAuthenticated: admin.isAdminAuthenticated,
   requireAdminAuth: admin.requireAdminAuth,
   createPartyKitAdminToken: admin.createPartyKitAdminToken,
-  createPartyKitSessionSettingsToken: admin.createPartyKitSessionSettingsToken,
+  createPartyKitSessionSettingsToken: ({ sessionId, timerControlMode, sessionUpdatedAt }) =>
+    createPartyKitSessionSettingsToken(sessionId, timerControlMode, sessionUpdatedAt),
 };

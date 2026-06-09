@@ -22,6 +22,7 @@ export interface CreateSessionOptions {
   projectClient?: string;
   projectBackground?: string;
   projectNotes?: string;
+  timerControlMode?: TimerControlMode;
 }
 
 export interface CreateSessionResult {
