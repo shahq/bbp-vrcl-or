@@ -22,7 +22,12 @@ function resolveProvider(model: string): AIProviderName {
     return "google";
   }
 
-  if (normalizedModel.startsWith("minimax")) {
+  if (
+    normalizedModel.startsWith("minimax") ||
+    normalizedModel.startsWith("deepseek-v4-") ||
+    normalizedModel.startsWith("glm-") ||
+    normalizedModel.startsWith("kimi-")
+  ) {
     return "opencode";
   }
 
@@ -48,7 +53,7 @@ export function getDefaultModel(): string {
   }
 
   if (hasOpencodeApiKey()) {
-    return "minimax-m2.5";
+    return "deepseek-v4-flash";
   }
 
   if (hasOpenRouterApiKey()) {
@@ -83,7 +88,7 @@ function getFallbackModel(provider: AIProviderName): string {
     return "claude-3-5-haiku-latest";
   }
 
-  return "minimax-m2.5";
+  return "deepseek-v4-flash";
 }
 
 function isProviderAvailable(provider: AIProviderName): boolean {

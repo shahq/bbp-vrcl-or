@@ -264,7 +264,7 @@ function Dashboard() {
       <Sidebar 
         onViewChange={() => {}} 
         currentView="new" 
-        selectedModel="minimax-m2.5" 
+        selectedModel="deepseek-v4-flash"
         onModelChange={() => {}}
         sessions={allSessions}
         onCreateSession={createSession}
@@ -487,7 +487,7 @@ function SessionView() {
 
   const [projectData, setProjectData] = useState({ client: '', background: '', notes: '' });
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<ModelType>('minimax-m2.5');
+  const [selectedModel, setSelectedModel] = useState<ModelType>('deepseek-v4-flash');
   const [attachments, setAttachments] = useState<ProjectAttachment[]>([]);
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);

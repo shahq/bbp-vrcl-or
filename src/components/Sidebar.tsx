@@ -417,6 +417,8 @@ export default function Sidebar({
               onChange={(e) => onModelChange(e.target.value as ModelType)}
               className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 py-2 pl-3 pr-8 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
             >
+              <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+              <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
               <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
               <option value="minimax-m2.5-free">MiniMax M2.5 Free</option>
               <option value="minimax-m2.5">MiniMax M2.5</option>

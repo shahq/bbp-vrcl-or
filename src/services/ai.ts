@@ -142,7 +142,7 @@ async function requestChatCompletion(
   return data.text || "";
 }
 
-export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'minimax-m2.5'): Promise<CardData[]> {
+export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'deepseek-v4-flash'): Promise<CardData[]> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context, generate Act I headline options for the canvas.
@@ -179,7 +179,6 @@ export async function generateCards(client: string, background: string, notes: s
       // but usually it's better to just throw and let the user retry.
       throw new Error("The AI model returned malformed JSON. Please try again.");
     }
-    
     if (!Array.isArray(parsed)) {
       throw new Error("The AI model returned malformed JSON. Please try again.");
     }
@@ -203,21 +202,19 @@ export async function generateCards(client: string, background: string, notes: s
       throw new Error(`The AI model did not return 3 valid ${getSectionLabel(incompleteSection)} cards. Please regenerate.`);
     }
 
-    const cards = ACT1_SECTION_IDS.flatMap((section) => cardsBySection[section].map((content, index) => ({
+    return ACT1_SECTION_IDS.flatMap((section) => cardsBySection[section].map((content, index) => ({
       id: `gen-${section}-${index}`,
       section,
       content,
       starred: false
     })));
-
-    return cards;
   } catch (error) {
     console.error("Error generating cards:", error);
     throw error;
   }
 }
 
-export async function generateSingleIdea(client: string, background: string, notes: string, section: string, model: ModelType = 'minimax-m2.5'): Promise<string> {
+export async function generateSingleIdea(client: string, background: string, notes: string, section: string, model: ModelType = 'deepseek-v4-flash'): Promise<string> {
   if (!isAct1SectionId(section)) {
     throw new Error(`Unsupported Act I section: ${section}`);
   }
@@ -232,17 +229,52 @@ export async function generateSingleIdea(client: string, background: string, not
 
     ${buildAct1CardGenerationInstructions()}
 
-    Return one option for section "${section}" only.
-    Return ONLY the idea text, nothing else.
+    Return one option for the requested section only.
+    Return ONLY the headline text, nothing else.
   `;
 
   try {
     const responseText = await requestTextCompletion(prompt, model);
-    const idea = normalizeGeneratedSentence(responseText);
+    const idea = normalizeGeneratedSentence(responseText).replace(/^["']|["']$/g, '');
     assertValidSingleAct1Idea(section, idea);
     return idea;
   } catch (error) {
     console.error("Error generating single idea:", error);
+    throw error;
+  }
+}
+
+export async function synthesizeNoteIntoCard(
+  client: string,
+  background: string,
+  projectNotes: string,
+  sourceCard: Pick<CardData, 'section' | 'content'>,
+  noteText: string,
+  model: ModelType = 'deepseek-v4-flash'
+): Promise<string> {
+  const prompt = `
+    You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
+    Turn the user's note into ONE concise card sentence for the "${sourceCard.section}" section.
+
+    Client: ${client || 'Unknown Client'}
+    Background: ${background || 'No background provided.'}
+    Project Notes: ${projectNotes || 'None.'}
+    Selected Card: ${sourceCard.content || 'No selected card content.'}
+    User Note:
+    ${noteText}
+
+    Requirements:
+    - Return only the new card sentence.
+    - Maximum ${ACT1_CARD_CHARACTER_LIMIT} characters.
+    - Keep it concrete and useful for the current section.
+    - Do not include quotes, markdown, bullets, labels, or explanation.
+  `;
+
+  try {
+    const responseText = await requestTextCompletion(prompt, model);
+    return responseText.trim().replace(/^["']|["']$/g, '') || "Synthesized card idea";
+  } catch (error) {
+    console.error("Error synthesizing note into card:", error);
     throw error;
   }
 }
@@ -252,7 +284,7 @@ export async function generateBriefFromUploads(
   existingBackground: string,
   notes: string,
   attachments: ProjectAttachment[],
-  model: ModelType = 'minimax-m2.5'
+  model: ModelType = 'deepseek-v4-flash'
 ): Promise<string> {
   const usableAttachments = attachments
     .filter((attachment) => attachment.summary.trim() || attachment.extractedText.trim() || attachment.note?.trim());
@@ -315,7 +347,7 @@ export async function generateProjectOverviewFromQuestionnaire(
   answers: Record<string, string>,
   existingBackground: string,
   notes: string,
-  model: ModelType = 'minimax-m2.5'
+  model: ModelType = 'deepseek-v4-flash'
 ): Promise<string> {
   const answerContext = questionnaire.questions
     .map((question: ProjectBriefQuestion) => {
@@ -359,7 +391,7 @@ export async function generateProjectOverviewFromQuestionnaire(
   }
 }
 
-export async function generateTransformationStory(client: string, background: string, notes: string, chainText: string, model: ModelType = 'minimax-m2.5'): Promise<string> {
+export async function generateTransformationStory(client: string, background: string, notes: string, chainText: string, model: ModelType = 'deepseek-v4-flash'): Promise<string> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context and the sequence of connected ideas (the story chain), generate a cohesive, creative transformation story (a hero's journey for a business).
@@ -390,7 +422,7 @@ export async function generateTransformationStory(client: string, background: st
   }
 }
 
-export async function generateChatResponse(client: string, background: string, notes: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[], model: ModelType = 'gemini-3.1-pro-preview', mode: 'new' | 'canvas' = 'canvas', context?: ChatGenerationContext): Promise<string> {
+export async function generateChatResponse(client: string, background: string, notes: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[], model: ModelType = 'deepseek-v4-flash', mode: 'new' | 'canvas' = 'canvas', context?: ChatGenerationContext): Promise<string> {
   let systemInstruction = '';
   const contextInstruction = `
     Current UI Context:

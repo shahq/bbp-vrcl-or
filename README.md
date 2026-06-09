@@ -81,7 +81,7 @@ AI_PROVIDER=opencode
 DATA_STORE_PROVIDER=sqlite
 ATTACHMENT_STORE_PROVIDER=local
 ADMIN_AUTH_PROVIDER=password
-AI_DEFAULT_MODEL=minimax-m2.5
+AI_DEFAULT_MODEL=deepseek-v4-flash
 GOOGLE_API_KEY=your_google_api_key
 OPENCODE_API_KEY=your_opencode_api_key
 OPENROUTER_API_KEY=your_openrouter_api_key
@@ -108,7 +108,7 @@ Notes:
 - `ATTACHMENT_STORE_PROVIDER=ephemeral` keeps uploaded files only long enough for server-side extraction, then discards the original binaries. Extracted text, summaries, and source notes still persist in Firestore. This is the recommended alpha setting if you want Firebase-backed data without enabling Cloud Storage yet.
 - Set `ATTACHMENT_STORE_PROVIDER=firebase` when uploaded files should live durably in Cloud Storage and attachment metadata should live in Firestore.
 - `ADMIN_AUTH_PROVIDER=password` keeps the current shared admin password flow. Firebase Auth is intentionally deferred for alpha and can be introduced later behind the existing seam.
-- Model choice still determines provider when the selected model is vendor-specific, such as Gemini vs MiniMax vs OpenRouter models like `openrouter/auto`.
+- Model choice still determines provider when the selected model is vendor-specific, such as Gemini, DeepSeek V4, MiniMax, or OpenRouter models like `openrouter/auto`.
 - `GOOGLE_API_KEY` and `GEMINI_API_KEY` are treated interchangeably by the server.
 - Models containing `/` are treated as OpenRouter models by default, except direct `openai/...` and `anthropic/...` prefixes.
 - OpenAI models such as `gpt-4o-mini` use `OPENAI_API_KEY`.

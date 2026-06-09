@@ -50,8 +50,21 @@ function toOpencodeMessages(params: GenerateTextParams): OpenCodeMessage[] {
   return messages;
 }
 
+function getOpencodeEndpoint(model: string) {
+  const normalizedModel = model.toLowerCase();
+  if (
+    normalizedModel.startsWith("deepseek-v4-") ||
+    normalizedModel.startsWith("glm-") ||
+    normalizedModel.startsWith("kimi-")
+  ) {
+    return "https://opencode.ai/zen/go/v1/chat/completions";
+  }
+
+  return "https://opencode.ai/zen/v1/chat/completions";
+}
+
 export async function generateWithOpencode(params: GenerateTextParams): Promise<string> {
-  const response = await fetch("https://opencode.ai/zen/v1/chat/completions", {
+  const response = await fetch(getOpencodeEndpoint(params.model), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
