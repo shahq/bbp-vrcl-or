@@ -1,23 +1,26 @@
 # Convex + Vercel Migration Checklist
 
-Use this checklist as the running migration ledger. Update it at the end of every slice.
+Use this checklist as the running recovery ledger.
 
-## Phase 0 - Migration Operating System
+## Phase 0 - Recovery Base And Guardrails
 
-- [x] Update `AGENTS.md` with active migration direction.
-- [x] Create active Convex/Vercel migration plan.
-- [x] Create reusable agent loop docs.
-- [x] Create phased migration checklist.
-- [x] Record first recommended implementation slice.
+- [x] Base recovery branch on `firebase-backend-migration`.
+- [x] Document that `main` is old design history.
+- [x] Document that `codex/convex-vercel-migration` is salvage-only.
+- [x] Record Firebase UI preservation rules.
+- [x] Remove loop/process docs that distract from recovery.
+- [x] Add `docs/firebaseUI_RECOVERY_PLAN.md`.
 
 ## Phase 1 - Branch And Diff Hygiene
 
-- [ ] Compare `main...firebase-backend-migration`.
+- [x] Compare `firebase-backend-migration..codex/convex-vercel-migration`.
+- [x] Identify shell/workspace UI files that drifted.
+- [x] Verify infinite canvas mostly survived the bad port.
 - [ ] Identify provider-seam files to preserve.
-- [ ] Identify product behavior changes to preserve.
+- [ ] Identify Convex/Vercel commits to salvage.
 - [ ] Identify Firebase / Cloud Run files to leave behind.
 - [ ] Identify committed runtime artifacts to exclude.
-- [ ] Propose clean branch and commit strategy.
+- [ ] Apply clean branch and commit strategy.
 - [ ] Get human approval before deleting or dropping tracked files.
 
 ## Phase 2 - Convex Schema And Local Setup
@@ -90,12 +93,12 @@ Use this checklist as the running migration ledger. Update it at the end of ever
 
 ## Current Next Recommended Slice
 
-Inventory and isolate the useful branch work before adding Convex.
+Replay the Convex-specific provider/backend commits onto the Firebase UI recovery branch.
 
 Expected output:
 
-- Provider-seam file list.
-- Product behavior file list.
-- Firebase / Cloud Run leave-behind list.
-- Runtime artifact leave-behind list.
-- Proposed clean branch and commit plan.
+- Convex provider seam files preserved.
+- Firebase UI shell preserved.
+- Infinite canvas behavior preserved.
+- SQLite and local attachment fallback preserved.
+- Checks run and failures documented.

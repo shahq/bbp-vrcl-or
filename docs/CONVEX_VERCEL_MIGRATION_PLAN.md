@@ -6,6 +6,8 @@ Active migration plan.
 
 This plan replaces the Firebase / Cloud Run plan as the active direction. The Firebase plan remains in the repo as historical context until a human approves deletion or archival.
 
+Recovery note: `firebase-backend-migration` is the customer-facing UI source of truth. Local `main` contains the old design and must not be used as the recovery base. See `docs/firebaseUI_RECOVERY_PLAN.md`.
+
 ## Goal
 
 Move Beyond Bullet Points to a handoff-friendly hosted architecture while preserving product behavior.
@@ -26,6 +28,8 @@ The migration is not a UX redesign. It replaces persistence, storage, and deploy
 Preserve product behavior while replacing infrastructure behind seams.
 
 Every implementation slice must be incremental, reversible, testable, and documented. Prefer adding a parallel provider over replacing an existing one.
+
+For the current recovery, preserve Firebase UI first and salvage Convex/Vercel/provider work second.
 
 ## Existing Work To Preserve
 
@@ -109,25 +113,27 @@ Do not move presence, cursors, timer broadcast, or high-frequency canvas sync in
 
 ## Phases
 
-### Phase 0 - Migration Operating System
+### Phase 0 - Recovery Base And Guardrails
 
-Create the plan, loop docs, approval gates, and checklist.
+Recover from `firebase-backend-migration`, clean up process docs, and prevent future work from drifting back to `main`.
 
 Outcome:
 
-- Future work is sliced and reviewable.
-- Agents know where to stop.
-- The Firebase plan is no longer the active target.
+- Firebase UI is documented as the source of truth.
+- Convex branch is documented as salvage-only.
+- Loop/process docs are removed.
+- Approval gates remain focused on real product and migration risk.
 
 ### Phase 1 - Branch And Diff Hygiene
 
-Create a clean migration branch from `main` and decide which branch changes to port.
+Create a clean migration branch from `firebase-backend-migration` and decide which Convex branch changes to salvage.
 
 Expected work:
 
-- Inventory useful commits/files on `firebase-backend-migration`.
+- Inventory useful commits/files on `codex/convex-vercel-migration`.
 - Identify runtime artifacts and Firebase-only files to leave behind.
-- Port provider seams and product changes in reviewable commits.
+- Port provider seams and Convex/Vercel changes in reviewable commits.
+- Preserve Firebase UI shell and infinite canvas behavior.
 
 Approval gates:
 
