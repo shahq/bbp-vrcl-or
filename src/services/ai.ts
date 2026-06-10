@@ -33,18 +33,33 @@ function hasMultipleSentences(content: string): boolean {
 }
 
 function isValidAct1CardContent(content: string): boolean {
-  return Boolean(content)
-    && content.length <= ACT1_CARD_CHARACTER_LIMIT
-    && !content.includes('\n')
-    && !hasMultipleSentences(content);
+  const isEmpty = !Boolean(content);
+  const tooLong = content.length > ACT1_CARD_CHARACTER_LIMIT;
+  const hasNewline = content.includes('\n');
+  const multiSentence = hasMultipleSentences(content);
+  const valid = !isEmpty && !tooLong && !hasNewline && !multiSentence;
+  if (!valid) {
+    console.warn('[AI] isValidAct1CardContent REJECTED:', {
+      isEmpty,
+      tooLong,
+      charLimit: ACT1_CARD_CHARACTER_LIMIT,
+      actualLength: content.length,
+      hasNewline,
+      multiSentence,
+      preview: content.slice(0, 120),
+    });
+  }
+  return valid;
 }
 
 function assertValidSingleAct1Idea(section: string, content: string) {
   if (!isAct1SectionId(section)) {
+    console.warn('[AI] assertValidSingleAct1Idea REJECTED — unsupported section:', { section, preview: content.slice(0, 60) });
     throw new Error(`The AI model returned an unsupported section: ${section}`);
   }
 
   if (!isValidAct1CardContent(content)) {
+    console.warn('[AI] assertValidSingleAct1Idea REJECTED — invalid content:', { section, contentLength: content.length, preview: content.slice(0, 60) });
     throw new Error(`The AI model returned an invalid ${getSectionLabel(section)} idea. Please regenerate.`);
   }
 }
@@ -133,6 +148,7 @@ function inferFallbackSubject(background: string, notes: string): string {
 }
 
 function createFallbackSingleIdea(section: Act1SectionId, background: string, notes: string): string {
+  console.warn('[AI] createFallbackSingleIdea TRIGGERED:', { section, backgroundLength: background.length, notesLength: notes.length });
   const subject = inferFallbackSubject(background, notes);
   const fallbacks: Record<Act1SectionId, string> = {
     place: `${subject} moves through a fast-changing environment`,
@@ -145,6 +161,7 @@ function createFallbackSingleIdea(section: Act1SectionId, background: string, no
 }
 
 function createFallbackSectionCards(section: Act1SectionId, background: string, notes: string): CardData[] {
+  console.warn('[AI] createFallbackSectionCards TRIGGERED:', { section, backgroundLength: background.length, notesLength: notes.length });
   const subject = inferFallbackSubject(background, notes);
   const fallbackContent: Record<Act1SectionId, string[]> = {
     place: [
@@ -183,6 +200,7 @@ function createFallbackSectionCards(section: Act1SectionId, background: string, 
 }
 
 function parseGeneratedCardItems(responseText: string): Array<{ section: Act1SectionId; content: string }> {
+  console.log('[AI] parseGeneratedCardItems START. responseText length:', responseText.length);
   const cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   const startIndex = cleanedText.indexOf('[');
   const endIndex = cleanedText.lastIndexOf(']');
@@ -190,24 +208,39 @@ function parseGeneratedCardItems(responseText: string): Array<{ section: Act1Sec
     startIndex !== -1 && endIndex !== -1 && endIndex >= startIndex
       ? cleanedText.substring(startIndex, endIndex + 1)
       : cleanedText;
+  console.log('[AI] parseGeneratedCardItems: bracket extraction', { startIndex, endIndex, jsonStrLength: jsonStr.length });
 
   let parsed;
   try {
     parsed = JSON.parse(jsonStr);
   } catch (parseError) {
-    console.error("Failed to parse JSON from model:", jsonStr);
+    console.error('[AI] parseGeneratedCardItems JSON parse FAILED:', { jsonStrLength: jsonStr.length, preview: jsonStr.slice(0, 200) });
     throw new Error("The AI model returned malformed JSON. Please try again.");
   }
 
   if (!Array.isArray(parsed)) {
+    console.error('[AI] parseGeneratedCardItems: parsed is NOT an array. Type:', typeof parsed);
     throw new Error("The AI model returned malformed JSON. Please try again.");
   }
 
-  return parsed.flatMap((item: any) => {
-    if (!isAct1SectionId(item?.section)) return [];
+  let keptCount = 0;
+  let discardedCount = 0;
+  const result = parsed.flatMap((item: any) => {
+    if (!isAct1SectionId(item?.section)) {
+      console.warn('[AI] parseGeneratedCardItems DISCARDED — bad section:', { section: item?.section, preview: String(item?.content).slice(0, 60) });
+      discardedCount++;
+      return [];
+    }
     const content = normalizeGeneratedSentence(item.content);
-    return isValidAct1CardContent(content) ? [{ section: item.section, content }] : [];
+    if (isValidAct1CardContent(content)) {
+      keptCount++;
+      return [{ section: item.section, content }];
+    }
+    discardedCount++;
+    return [];
   });
+  console.log('[AI] parseGeneratedCardItems DONE:', { keptCount, discardedCount, totalItems: parsed.length });
+  return result;
 }
 
 async function requestTextCompletion(
@@ -217,6 +250,7 @@ async function requestTextCompletion(
   signal?: AbortSignal,
   maxOutputTokens?: number
 ): Promise<string> {
+  console.log('[AI] requestTextCompletion START:', { model, responseFormat, maxOutputTokens });
   const response = await fetch(apiUrl("/api/ai/complete"), {
     method: "POST",
     headers: {
@@ -226,6 +260,7 @@ async function requestTextCompletion(
     signal,
   });
 
+  console.log('[AI] requestTextCompletion response status:', response.status);
   if (!response.ok) {
     let errorData;
     try {
@@ -235,10 +270,12 @@ async function requestTextCompletion(
     }
 
     const errorMessage = typeof errorData.error === 'object' ? JSON.stringify(errorData.error) : errorData.error;
+    console.error('[AI] requestTextCompletion FAILED:', { status: response.status, errorMessage });
     throw new Error(errorMessage || `AI completion error: ${response.status}`);
   }
 
   const data = await response.json();
+  console.log('[AI] requestTextCompletion SUCCESS. response text length:', (data.text || '').length);
   return data.text || "";
 }
 
@@ -249,11 +286,17 @@ async function requestTextCompletionWithTimeout(
   maxOutputTokens?: number,
   responseFormat?: 'json'
 ): Promise<string> {
+  console.log('[AI] requestTextCompletionWithTimeout START:', { model, timeoutMs, responseFormat });
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = window.setTimeout(() => {
+    console.warn('[AI] requestTextCompletionWithTimeout ABORTED after', timeoutMs, 'ms');
+    controller.abort();
+  }, timeoutMs);
 
   try {
-    return await requestTextCompletion(prompt, model, responseFormat, controller.signal, maxOutputTokens);
+    const result = await requestTextCompletion(prompt, model, responseFormat, controller.signal, maxOutputTokens);
+    console.log('[AI] requestTextCompletionWithTimeout completed within', timeoutMs, 'ms');
+    return result;
   } finally {
     window.clearTimeout(timeout);
   }
@@ -354,6 +397,7 @@ async function requestChatCompletion(
 }
 
 export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'kimi-k2.6'): Promise<CardData[]> {
+  console.log('[AI] generateCards START:', { client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model });
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context, generate Act I headline options for the canvas.
@@ -374,6 +418,7 @@ export async function generateCards(client: string, background: string, notes: s
   try {
     const responseText = await requestTextCompletion(prompt, model, 'json');
     const parsed = parseGeneratedCardItems(responseText);
+    console.log('[AI] generateCards parsed total:', parsed.length);
 
     const cardsBySection = ACT1_SECTION_IDS.reduce((acc, section) => {
       acc[section] = [];
@@ -386,11 +431,16 @@ export async function generateCards(client: string, background: string, notes: s
       }
     });
 
+    const sectionCounts = ACT1_SECTION_IDS.map((section) => ({ section, count: cardsBySection[section].length }));
+    console.log('[AI] generateCards per-section distribution:', sectionCounts);
+
     const incompleteSection = ACT1_SECTION_IDS.find((section) => cardsBySection[section].length < 3);
     if (incompleteSection) {
+      console.warn('[AI] generateCards INCOMPLETE section:', { section: incompleteSection, count: cardsBySection[incompleteSection].length });
       throw new Error(`The AI model did not return 3 valid ${getSectionLabel(incompleteSection)} cards. Please regenerate.`);
     }
 
+    console.log('[AI] generateCards SUCCESS: all sections have 3 cards');
     return ACT1_SECTION_IDS.flatMap((section) => cardsBySection[section].map((content, index) => ({
       id: `gen-${section}-${index}`,
       section,
@@ -398,7 +448,7 @@ export async function generateCards(client: string, background: string, notes: s
       starred: false
     })));
   } catch (error) {
-    console.error("Error generating cards:", error);
+    console.error('[AI] generateCards FAILED:', error);
     throw error;
   }
 }
@@ -411,7 +461,26 @@ export async function generateCardsForSection(
   model: ModelType = 'kimi-k2.6',
   existingCards: Pick<CardData, 'section' | 'content'>[] = []
 ): Promise<CardData[]> {
-  const prompt = `
+  console.log('[AI] generateCardsForSection START:', { section, client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model, existingCardsCount: existingCards.length });
+
+  const isChange = section === 'change';
+  const prompt = isChange
+    ? `
+    Generate exactly 3 polished headline options for the "${getSectionLabel(section)}" column of an Act I presentation canvas.
+
+    Compact project context:
+    Client: ${limitPromptText(client || 'Unknown Client', 160)}
+    Project overview excerpt: ${limitPromptText(background || 'No background provided.', 1_100)}
+    Notes excerpt: ${limitPromptText(notes || 'None.', 350)}
+
+    Rule: ${SINGLE_IDEA_SECTION_RULES[section]}
+    Existing cards to avoid:
+    ${formatExistingIdeas(existingCards, section)}
+
+    Constraints: single sentence, ${ACT1_CARD_CHARACTER_LIMIT} characters max, valid JSON only.
+    JSON shape: [{"section":"${section}","content":"headline"}]
+  `
+    : `
     You are generating one column of an Act I presentation canvas using Beyond Bulletpoints.
 
     Generate exactly 3 polished headline options for this section only:
@@ -438,26 +507,40 @@ export async function generateCardsForSection(
     - Every object must use section "${section}".
   `;
 
-  try {
-    const responseText = await requestTextCompletionWithTimeout(prompt, model, 28_000, undefined, 'json');
-    const parsed = parseGeneratedCardItems(responseText)
-      .filter((item) => item.section === section)
-      .slice(0, 3);
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const responseText = await requestTextCompletionWithTimeout(prompt, model, 60_000, undefined, 'json');
+      const parsed = parseGeneratedCardItems(responseText)
+        .filter((item) => item.section === section)
+        .slice(0, 3);
 
-    if (parsed.length < 3) {
-      throw new Error(`The AI model did not return 3 valid ${getSectionLabel(section)} cards. Please regenerate.`);
+      console.log('[AI] generateCardsForSection:', { section, attempt, parsedCount: parsed.length });
+      if (parsed.length < 3) {
+        console.warn('[AI] generateCardsForSection insufficient items:', { section, attempt, parsedCount: parsed.length });
+        throw new Error(`The AI model did not return 3 valid ${getSectionLabel(section)} cards. Please regenerate.`);
+      }
+
+      console.log('[AI] generateCardsForSection SUCCESS:', { section, attempt, parsedCount: parsed.length });
+      return parsed.map((item, index) => ({
+        id: `gen-${section}-${index}`,
+        section,
+        content: item.content,
+        starred: false,
+      }));
+    } catch (error) {
+      const isAbortError = (error instanceof DOMException && error.name === 'AbortError') || (error instanceof Error && error.message.includes('AbortError'));
+      console.warn('[AI] generateCardsForSection attempt failed:', { section, attempt, isAbortError, error });
+      if (isAbortError && attempt < maxAttempts) {
+        console.log('[AI] generateCardsForSection RETRYING:', { section, attempt, nextAttempt: attempt + 1 });
+        continue;
+      }
+      console.error('[AI] generateCardsForSection FAILED after all retries:', { section, attempts: attempt });
+      return createFallbackSectionCards(section, background, notes);
     }
-
-    return parsed.map((item, index) => ({
-      id: `gen-${section}-${index}`,
-      section,
-      content: item.content,
-      starred: false,
-    }));
-  } catch (error) {
-    console.error(`Error generating ${getSectionLabel(section)} cards:`, error);
-    return createFallbackSectionCards(section, background, notes);
   }
+
+  return createFallbackSectionCards(section, background, notes);
 }
 
 export async function generateSingleIdea(
@@ -468,7 +551,9 @@ export async function generateSingleIdea(
   model: ModelType = 'kimi-k2.6',
   existingCards?: Pick<CardData, 'section' | 'content'>[]
 ): Promise<string> {
+  console.log('[AI] generateSingleIdea START:', { section, client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model });
   if (!isAct1SectionId(section)) {
+    console.error('[AI] generateSingleIdea FAILED — unsupported section:', { section });
     throw new Error(`Unsupported Act I section: ${section}`);
   }
 
@@ -496,10 +581,12 @@ export async function generateSingleIdea(
   try {
     const responseText = await requestTextCompletionWithTimeout(prompt, model, 4_000);
     const idea = normalizeGeneratedSentence(responseText).replace(/^["']|["']$/g, '');
+    console.log('[AI] generateSingleIdea raw response length:', responseText.length, 'idea length:', idea.length);
     assertValidSingleAct1Idea(section, idea);
+    console.log('[AI] generateSingleIdea SUCCESS:', { section, ideaLength: idea.length });
     return idea;
   } catch (error) {
-    console.error("Error generating single idea:", error);
+    console.error('[AI] generateSingleIdea FAILED:', { section, error });
     return createFallbackSingleIdea(section, background, notes);
   }
 }

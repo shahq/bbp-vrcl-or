@@ -1,4 +1,4 @@
-export const ACT1_CARD_CHARACTER_LIMIT = 90;
+export const ACT1_CARD_CHARACTER_LIMIT = 105;
 
 export const ACT1_SECTION_IDS = [
   "place",

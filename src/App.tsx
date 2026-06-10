@@ -1271,6 +1271,7 @@ function SessionView() {
   };
 
   const generateAndSaveCardsBySection = async (background: string, seedCards: CardData[] = []) => {
+    console.log('[App] generateAndSaveCardsBySection START:', { backgroundLength: background.length, seedCardsCount: seedCards.length, client: projectData.client || currentSession?.name || 'Unknown' });
     setGeneratingSections([...ACT1_SECTION_IDS]);
 
     const results = await Promise.allSettled(ACT1_SECTION_IDS.map(async (section) => {
@@ -1284,16 +1285,26 @@ function SessionView() {
           seedCards
         );
 
+        console.log('[App] generateAndSaveCardsBySection:', { section, returnedCardCount: sectionCards.length, firstCardId: sectionCards[0]?.id, firstCardContent: sectionCards[0]?.content?.slice(0, 60) });
         await createGeneratedCards(sectionCards);
       } finally {
         setGeneratingSections((sections) => sections.filter((id) => id !== section));
       }
     }));
 
+    const sectionResults = results.map((result, index) => ({
+      section: ACT1_SECTION_IDS[index],
+      status: result.status,
+      reason: result.status === 'rejected' ? String(result.reason) : undefined,
+    }));
+    console.log('[App] generateAndSaveCardsBySection DONE:', sectionResults);
+
     const failedSection = results.find((result) => result.status === 'rejected');
     if (failedSection) {
+      console.error('[App] generateAndSaveCardsBySection: at least one section failed');
       throw failedSection.reason;
     }
+    console.log('[App] generateAndSaveCardsBySection: ALL SECTIONS SUCCESS');
   };
 
   const handleRegenerateCards = async (backgroundOverride?: string) => {
