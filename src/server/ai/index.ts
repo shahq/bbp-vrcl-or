@@ -1,7 +1,7 @@
 import type { AIProviderName, GenerateTextParams } from "./types";
 import { generateWithGoogle } from "./providers/google";
 import { hasGoogleApiKey } from "./providers/google";
-import { generateWithOpenRouter, hasOpenRouterApiKey } from "./providers/openrouter";
+import { generateWithOpenRouter, hasOpenRouterApiKey, streamWithOpenRouter } from "./providers/openrouter";
 import { generateWithOpencode, hasOpencodeApiKey, streamWithOpencode } from "./providers/opencode";
 import { generateWithOpenAi, hasOpenAiApiKey } from "./providers/openai";
 import { generateWithAnthropic, hasAnthropicApiKey } from "./providers/anthropic";
@@ -205,6 +205,11 @@ export async function* generateTextStream(params: GenerateTextParams): AsyncGene
 
   if (resolved.provider === "opencode") {
     yield* streamWithOpencode(request);
+    return;
+  }
+
+  if (resolved.provider === "openrouter") {
+    yield* streamWithOpenRouter(request);
     return;
   }
 

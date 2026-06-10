@@ -17,7 +17,7 @@ import { ActiveUsers, ConnectionStatus } from './components/UserPresence';
 import { usePartyKit } from './hooks/usePartyKit';
 import type { CardDraft, LiveConnection } from '../party/index';
 import { CardData, ConnectionData, ProjectAttachment, SessionNote } from './types';
-import { generateBriefFromUploadsStream, generateCardsForSection, ModelType } from './services/ai';
+import { generateBriefFromUploadsStream, generateCards, ModelType } from './services/ai';
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
@@ -1274,37 +1274,23 @@ function SessionView() {
     console.log('[App] generateAndSaveCardsBySection START:', { backgroundLength: background.length, seedCardsCount: seedCards.length, client: projectData.client || currentSession?.name || 'Unknown' });
     setGeneratingSections([...ACT1_SECTION_IDS]);
 
-    const results = await Promise.allSettled(ACT1_SECTION_IDS.map(async (section) => {
-      try {
-        const sectionCards = await generateCardsForSection(
-          projectData.client || currentSession?.name || '',
-          background,
-          projectData.notes,
-          section,
-          selectedModel,
-          seedCards
-        );
+    try {
+      const generatedCards = await generateCards(
+        projectData.client || currentSession?.name || '',
+        background,
+        projectData.notes,
+        selectedModel
+      );
 
-        console.log('[App] generateAndSaveCardsBySection:', { section, returnedCardCount: sectionCards.length, firstCardId: sectionCards[0]?.id, firstCardContent: sectionCards[0]?.content?.slice(0, 60) });
-        await createGeneratedCards(sectionCards);
-      } finally {
-        setGeneratingSections((sections) => sections.filter((id) => id !== section));
-      }
-    }));
-
-    const sectionResults = results.map((result, index) => ({
-      section: ACT1_SECTION_IDS[index],
-      status: result.status,
-      reason: result.status === 'rejected' ? String(result.reason) : undefined,
-    }));
-    console.log('[App] generateAndSaveCardsBySection DONE:', sectionResults);
-
-    const failedSection = results.find((result) => result.status === 'rejected');
-    if (failedSection) {
-      console.error('[App] generateAndSaveCardsBySection: at least one section failed');
-      throw failedSection.reason;
+      console.log('[App] generateAndSaveCardsBySection: bulk generated', generatedCards.length, 'cards');
+      await createGeneratedCards(generatedCards);
+      console.log('[App] generateAndSaveCardsBySection: ALL SECTIONS SUCCESS');
+    } catch (error) {
+      console.error('[App] generateAndSaveCardsBySection: bulk generation failed', error);
+      throw error;
+    } finally {
+      setGeneratingSections([]);
     }
-    console.log('[App] generateAndSaveCardsBySection: ALL SECTIONS SUCCESS');
   };
 
   const handleRegenerateCards = async (backgroundOverride?: string) => {

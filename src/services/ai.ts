@@ -2,6 +2,7 @@ import { apiUrl } from '../config/api';
 import type { ProjectBriefQuestion, ProjectBriefQuestionnaire } from '../config/projectBriefQuestionnaire';
 import {
   ACT1_CARD_CHARACTER_LIMIT,
+  ACT1_CARD_GENERATION_TARGET,
   ACT1_SECTION_IDS,
   getSectionLabel,
   isAct1SectionId,
@@ -93,7 +94,7 @@ function buildAct1CardGenerationInstructions() {
     - The flow is Setting -> Role -> Challenge -> Desired end state -> How do we get there?
     - Each section must introduce new information, increase clarity or urgency, and move the story forward.
     - Generate exactly 3 options per section.
-    - Each option must be a single sentence of ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
+    - Each option must be a single sentence of ${ACT1_CARD_GENERATION_TARGET} characters or less.
     - Each option must contain one idea only and be readable as a standalone presentation headline.
     - Use active voice, present tense, clear conversational language, audience-focused framing, and compressed phrasing.
     - Avoid corporate jargon, buzzwords, marketing language, sales language, formal phrasing, and multi-idea sentences.
@@ -104,7 +105,7 @@ function buildAct1CardGenerationInstructions() {
     - Vary openings across pronoun-led, environment-led, situation-led, pressure-led, and outcome-led structures.
     - Across all options, no more than 2 sentences should start with the same word.
     - Do not repeat previous sections, mirror Challenge in Desired end state form, or turn Desired end state into How do we get there? wording.
-    - Before returning, verify: 3 options per section, ${ACT1_CARD_CHARACTER_LIMIT} characters or less, one idea per sentence, consistent perspective, no repetition, natural spoken phrasing.
+    - Before returning, verify: 3 options per section, ${ACT1_CARD_GENERATION_TARGET} characters or less, one idea per sentence, consistent perspective, no repetition, natural spoken phrasing.
 
     Section-specific rules:
     - place (Setting): Define the environment the audience operates in. Include industry conditions, external pressures, market dynamics, or operational environment. Exclude problems, solutions, and outcomes.
@@ -453,58 +454,46 @@ export async function generateCards(client: string, background: string, notes: s
   }
 }
 
+function formatStoryContext(storyContext: Pick<CardData, 'section' | 'content'>[]): string {
+  if (!storyContext.length) return 'None yet. This is the first column.';
+  return storyContext.map((card, index) => `${index + 1}. ${getSectionLabel(card.section)}: "${card.content}"`).join('\n');
+}
+
 export async function generateCardsForSection(
   client: string,
   background: string,
   notes: string,
   section: Act1SectionId,
   model: ModelType = 'kimi-k2.6',
-  existingCards: Pick<CardData, 'section' | 'content'>[] = []
+  existingCards: Pick<CardData, 'section' | 'content'>[] = [],
+  storyContext: Pick<CardData, 'section' | 'content'>[] = []
 ): Promise<CardData[]> {
-  console.log('[AI] generateCardsForSection START:', { section, client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model, existingCardsCount: existingCards.length });
+  console.log('[AI] generateCardsForSection START:', { section, client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model, existingCardsCount: existingCards.length, storyContextCount: storyContext.length });
 
-  const isChange = section === 'change';
-  const prompt = isChange
-    ? `
+  const prompt = `
     Generate exactly 3 polished headline options for the "${getSectionLabel(section)}" column of an Act I presentation canvas.
 
-    Compact project context:
+    Project context:
     Client: ${limitPromptText(client || 'Unknown Client', 160)}
-    Project overview excerpt: ${limitPromptText(background || 'No background provided.', 1_100)}
-    Notes excerpt: ${limitPromptText(notes || 'None.', 350)}
+    Project Overview:
+    ${background || 'No background provided.'}
+    Notes: ${notes || 'None.'}
+
+    Story arc so far (read these cards in sequence to understand the narrative):
+    ${formatStoryContext(storyContext)}
+
+    Your task: Generate 3 cards that ADVANCE the story arc above.
+    - Each card must be a natural next step from the previous sections.
+    - Build on the narrative, don't just echo it.
+    - The 3 cards should explore different angles of the SAME story step.
+    - They must read as a coherent continuation when placed after the previous sections.
 
     Rule: ${SINGLE_IDEA_SECTION_RULES[section]}
     Existing cards to avoid:
     ${formatExistingIdeas(existingCards, section)}
 
-    Constraints: single sentence, ${ACT1_CARD_CHARACTER_LIMIT} characters max, valid JSON only.
+    Constraints: single sentence, ${ACT1_CARD_GENERATION_TARGET} characters max, valid JSON only.
     JSON shape: [{"section":"${section}","content":"headline"}]
-  `
-    : `
-    You are generating one column of an Act I presentation canvas using Beyond Bulletpoints.
-
-    Generate exactly 3 polished headline options for this section only:
-    Section: ${section} (${getSectionLabel(section)})
-
-    Compact project context:
-    Client: ${limitPromptText(client || 'Unknown Client', 160)}
-    Project overview excerpt: ${limitPromptText(background || 'No background provided.', 1_100)}
-    Notes excerpt: ${limitPromptText(notes || 'None.', 350)}
-
-    Column rule:
-    ${SINGLE_IDEA_SECTION_RULES[section]}
-
-    Existing cards to avoid:
-    ${formatExistingIdeas(existingCards, section)}
-
-    Quality bar:
-    - Make each card specific enough to feel useful, not blunt or generic.
-    - Prefer concrete nouns and human business language over slogans.
-    - Use about 30% more nuance than a terse label, while staying concise.
-    - Keep each card one sentence and ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
-    - Return only valid JSON, no markdown.
-    - JSON shape: [{"section":"${section}","content":"headline"}]
-    - Every object must use section "${section}".
   `;
 
   const maxAttempts = 2;
@@ -573,7 +562,7 @@ export async function generateSingleIdea(
     Output rules:
     - Return only the headline text.
     - One sentence only.
-    - ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
+    - ${ACT1_CARD_GENERATION_TARGET} characters or less.
     - Clear, active, conversational language.
     - No jargon, markdown, bullets, quotes, or labels.
   `;
@@ -612,7 +601,7 @@ export async function synthesizeNoteIntoCard(
 
     Requirements:
     - Return only the new card sentence.
-    - Maximum ${ACT1_CARD_CHARACTER_LIMIT} characters.
+    - Maximum ${ACT1_CARD_GENERATION_TARGET} characters.
     - Keep it concrete and useful for the current section.
     - Do not include quotes, markdown, bullets, labels, or explanation.
   `;

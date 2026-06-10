@@ -413,6 +413,9 @@ export default function Sidebar({
               <option value="mimo-v2.5">Mimo V2.5</option>
               <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
               <option value="minimax-m3">MiniMax M3</option>
+              <option value="google/gemma-4-31b-it">OpenRouter: Gemma 4 31B</option>
+              <option value="google/gemini-3.1-flash-lite">OpenRouter: Gemini 3.1 Flash Lite</option>
+              <option value="nvidia/nemotron-3-ultra-550b-a55b">OpenRouter: Nemotron 3 Ultra</option>
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
               <ChevronDown size={14} />
