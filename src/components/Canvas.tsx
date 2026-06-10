@@ -23,6 +23,7 @@ interface CanvasProps {
   projectData: { client: string; background: string; notes: string };
   showToast: (msg: string) => void;
   selectedModel: ModelType;
+  generatingSections?: string[];
   isEditMode?: boolean;
   currentSession?: { id: string; name: string } | null;
   onEditRequest?: () => void;
@@ -37,6 +38,7 @@ interface CanvasProps {
   onConnectionDelete?: (connectionId: string) => Promise<void>;
   activeUsers?: UserPresence[];
   liveCardDrafts?: Record<string, CardDraft>;
+  savingCardIds?: Set<string>;
   currentUserId?: string;
   currentUserColor?: string;
   activeTutorial?: TutorialItem | null;
@@ -191,7 +193,7 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({
   );
 }
 
-export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, isEditMode, currentSession, onEditRequest, onCardUpdate, onCardDraft, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], liveCardDrafts = {}, currentUserId = '', activeTutorial, onCloseTutorial }: CanvasProps) {
+export default function Canvas({ onSelectCard, selectedCard, cards, setCards, projectData, showToast, selectedModel, generatingSections = [], isEditMode, currentSession, onEditRequest, onCardUpdate, onCardDraft, onCardAdd, onCursorMove, connections = [], onCardDelete, onCardReorder, onConnectionCreate, onConnectionDelete, activeUsers = [], liveCardDrafts = {}, savingCardIds = new Set(), currentUserId = '', activeTutorial, onCloseTutorial }: CanvasProps) {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
@@ -561,8 +563,32 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     return !!draft;
   }, [getRemoteDraft, showToast]);
 
+  const showCardSavingToast = useCallback((cardId: string) => {
+    if (!savingCardIds.has(cardId)) return false;
+    showToast('Saving this card. Try again in a moment.');
+    return true;
+  }, [savingCardIds, showToast]);
+
+  const beginCardEdit = useCallback((card: CardData) => {
+    if (!isEditMode) {
+      showToast('Enter password to edit cards');
+      return;
+    }
+    if (showCardSavingToast(card.id)) return;
+    if (showCardLockedToast(card.id)) return;
+
+    setEditingCardId(card.id);
+    setEditContent(card.content || '');
+    onCardDraft?.(card.id, card.content || '', true);
+  }, [isEditMode, onCardDraft, showCardLockedToast, showCardSavingToast, showToast]);
+
   const handleDragStart = (e: React.DragEvent, cardId: string) => {
     if (!isEditMode) return;
+    if (showCardSavingToast(cardId)) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (showCardLockedToast(cardId)) {
       e.preventDefault();
       e.stopPropagation();
@@ -587,6 +613,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     setDragOverCardId(null);
     setDragOverColId(null);
     if (!draggedCardId || draggedCardId === targetCardId || !isEditMode) return;
+    if (showCardSavingToast(draggedCardId) || showCardSavingToast(targetCardId)) return;
     if (showCardLockedToast(draggedCardId) || showCardLockedToast(targetCardId)) return;
 
     const newCards = [...cards];
@@ -624,6 +651,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     setDragOverColId(null);
     setDragOverCardId(null);
     if (!draggedCardId || !isEditMode) return;
+    if (showCardSavingToast(draggedCardId)) return;
     if (showCardLockedToast(draggedCardId)) return;
 
     const newCards = [...cards];
@@ -677,6 +705,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
         if (cardId) {
           setEditingCardId(cardId);
           setEditContent('');
+          onCardDraft?.(cardId, '', true);
         }
       } catch (error) {
         console.error('Error creating card:', error);
@@ -691,11 +720,13 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       setCards([...cards, newCard]);
       setEditingCardId(newCard.id);
       setEditContent('');
+      onCardDraft?.(newCard.id, '', true);
     }
   };
 
   const handleUpdateCard = (cardId: string, content: string) => {
     if (!isEditMode) return;
+    if (showCardSavingToast(cardId)) return;
     if (showCardLockedToast(cardId)) return;
     
     // Prevent infinite loop by returning early if content hasn't changed
@@ -703,43 +734,41 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     if (!card || card.content === content) return;
 
     setCards(cards.map(c => c.id === cardId ? { ...c, content } : c));
-    onCardDraft?.(cardId, content, false);
     if (onCardUpdate) {
-      onCardUpdate(cardId, { content }).catch((error) => {
-        console.error('Error updating card:', error);
-        showToast('Failed to save changes');
-      });
+      onCardUpdate(cardId, { content })
+        .then(() => onCardDraft?.(cardId, content, false))
+        .catch((error) => {
+          console.error('Error updating card:', error);
+          showToast('Failed to save changes');
+        });
+    } else {
+      onCardDraft?.(cardId, content, false);
     }
   };
 
   const handleDoubleClick = (card: CardData) => {
-    if (!isEditMode) {
-      showToast('Enter password to edit cards');
-      return;
-    }
-    if (showCardLockedToast(card.id)) return;
-    
-    setEditingCardId(card.id);
-    setEditContent(card.content);
-    onCardDraft?.(card.id, card.content, true);
+    beginCardEdit(card);
   };
 
-  const handleSaveEdit = async (cardId: string) => {
+  const handleSaveEdit = (cardId: string) => {
     if (!isEditMode) return;
+    if (showCardSavingToast(cardId)) return;
     if (showCardLockedToast(cardId)) return;
+    const content = editContent;
     
     // Update local state
-    setCards(cards.map(c => c.id === cardId ? { ...c, content: editContent } : c));
-    onCardDraft?.(cardId, editContent, false);
+    setCards(cards.map(c => c.id === cardId ? { ...c, content } : c));
     
     // Call API to persist if callback provided
     if (onCardUpdate) {
-      try {
-        await onCardUpdate(cardId, { content: editContent });
-      } catch (error) {
-        console.error('Error updating card:', error);
-        showToast('Failed to save changes');
-      }
+      onCardUpdate(cardId, { content })
+        .then(() => onCardDraft?.(cardId, content, false))
+        .catch((error) => {
+          console.error('Error updating card:', error);
+          showToast('Failed to save changes');
+        });
+    } else {
+      onCardDraft?.(cardId, content, false);
     }
     
     setEditingCardId(null);
@@ -755,7 +784,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     setEditContent('');
   };
 
-  // Click outside any editing card to cancel edit mode
+  // Click outside any editing card to save the current edit.
   useEffect(() => {
     if (!editingCardId) return;
 
@@ -763,7 +792,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
       const target = e.target as HTMLElement;
       const editingCard = document.getElementById(`card-${editingCardId}`);
       if (editingCard && !editingCard.contains(target)) {
-        handleCancelEdit();
+        void handleSaveEdit(editingCardId);
       }
     };
 
@@ -773,7 +802,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
     return () => {
       document.removeEventListener('pointerdown', handleClickOutside, { capture: true });
     };
-  }, [editingCardId]);
+  }, [editingCardId, handleSaveEdit]);
 
   // Auto-resize any active editing textarea to match its content height
   useEffect(() => {
@@ -793,11 +822,12 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
 
   const handleGenerateSingle = async (cardId: string, colId: string) => {
     if (!isEditMode) return;
+    if (showCardSavingToast(cardId)) return;
     if (showCardLockedToast(cardId)) return;
     
     setGeneratingCards(prev => ({ ...prev, [cardId]: true }));
     try {
-      const idea = await generateSingleIdea(projectData.client, projectData.background, projectData.notes, colId, selectedModel);
+      const idea = await generateSingleIdea(projectData.client, projectData.background, projectData.notes, colId, selectedModel, cards);
       setEditContent(idea);
       setCards(prev => prev.map(card => card.id === cardId ? { ...card, content: idea } : card));
       setEditingCardId(null);
@@ -1138,6 +1168,26 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                   data-pan-target="true"
                 >
                   <h3 className="font-bold text-center mb-4 text-lg pointer-events-none">{col.title}</h3>
+                  {generatingSections.includes(col.id) && col.id !== 'story' && columnCards.length === 0 && (
+                    <div className="flex flex-col gap-3" aria-live="polite">
+                      {[0, 1, 2].map((placeholderIndex) => (
+                        <div
+                          key={`${col.id}-generating-${placeholderIndex}`}
+                          className={`relative min-h-[170px] rounded-xl p-5 text-sm ${col.color} border border-black/5 opacity-80`}
+                        >
+                          <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-gray-500">
+                            <Loader2 size={13} className="animate-spin" />
+                            Generating card
+                          </div>
+                          <div className="space-y-2">
+                            <div className="h-3 w-11/12 animate-pulse rounded bg-black/10" />
+                            <div className="h-3 w-4/5 animate-pulse rounded bg-black/10" />
+                            <div className="h-3 w-2/3 animate-pulse rounded bg-black/10" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {columnCards.map((card, cardIdx) => {
                     const storyCardLane = card.section === 'story' ? getStoryCardLane(card.id) : null;
                     const remoteDraft = getRemoteDraft(card.id);
@@ -1427,7 +1477,7 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                       ) : card.content || remoteDraft ? (
                         <div className={`${card.starred ? 'mt-5' : ''} font-medium leading-snug text-gray-900 pb-2 whitespace-pre-wrap`}>
                           <div className={remoteDraft ? 'text-gray-900' : ''}>
-                            {remoteDraft?.content ?? card.content}
+                            {remoteDraft ? (remoteDraft.content || 'New idea in progress...') : card.content}
                           </div>
                           {remoteDraft && (
                             <div
@@ -1444,28 +1494,13 @@ export default function Canvas({ onSelectCard, selectedCard, cards, setCards, pr
                         </div>
                       ) : (
                         <div className="flex flex-col gap-2 mt-2" onClick={e => e.stopPropagation()}>
-                          <textarea
-                            autoFocus
-                            value={editingCardId === card.id ? editContent : ''}
-                            placeholder="Type your idea..."
-                            className="w-full bg-transparent font-medium leading-snug text-gray-900 resize-none outline-none cursor-text whitespace-pre-wrap break-words overflow-hidden"
-                            onChange={(e) => handleEditContentChange(card.id, e.target.value)}
-                            onInput={(e) => {
-                              const el = e.currentTarget;
-                              el.style.height = 'auto';
-                              el.style.height = `${el.scrollHeight}px`;
-                            }}
-                            onFocus={() => {
-                              setEditingCardId(card.id);
-                              setEditContent('');
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleUpdateCard(card.id, editContent || e.currentTarget.value);
-                              }
-                            }}
-                          />
+                          <button
+                            type="button"
+                            onClick={() => beginCardEdit(card)}
+                            className="w-full rounded-md border border-dashed border-black/10 bg-white/40 px-2 py-2 text-left text-sm font-medium leading-snug text-gray-400 transition-colors hover:border-black/20 hover:bg-white/70 hover:text-gray-600"
+                          >
+                            Type your idea...
+                          </button>
                           <button
                             onClick={() => handleGenerateSingle(card.id, col.id)}
                             disabled={generatingCards[card.id]}

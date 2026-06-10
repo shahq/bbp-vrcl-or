@@ -17,11 +17,12 @@ import { ActiveUsers, ConnectionStatus } from './components/UserPresence';
 import { usePartyKit } from './hooks/usePartyKit';
 import type { CardDraft, LiveConnection } from '../party/index';
 import { CardData, ConnectionData, ProjectAttachment, SessionNote } from './types';
-import { generateBriefFromUploadsStream, generateCards, ModelType } from './services/ai';
+import { generateBriefFromUploadsStream, generateCardsForSection, ModelType } from './services/ai';
 import type { ProjectBackgroundApplyMode } from './components/chat/types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { TutorialItem } from './tutorials';
 import { apiUrl } from './config/api';
+import { ACT1_SECTION_IDS } from './config/canvasSections';
 import { useConfirmDialog } from './components/ConfirmDialog';
 import type { TimerControlMode } from './config/timer';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -224,7 +225,7 @@ function Dashboard() {
       <Sidebar
         onViewChange={() => {}}
         currentView="new"
-        selectedModel="minimax-m3"
+        selectedModel="kimi-k2.6"
         onModelChange={() => {}}
         sessions={allSessions}
         onCreateSession={createSession}
@@ -429,6 +430,8 @@ function SessionView() {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [cards, setCards] = useState<CardData[]>([]);
   const [liveCardDrafts, setLiveCardDrafts] = useState<Record<string, CardDraft>>({});
+  const [savingCardIds, setSavingCardIds] = useState<Set<string>>(() => new Set());
+  const savingCardIdsRef = useRef(savingCardIds);
   const [connections, setConnections] = useState<ConnectionData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -437,7 +440,7 @@ function SessionView() {
 
   const [projectData, setProjectData] = useState({ client: '', background: '', notes: '' });
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<ModelType>('minimax-m3');
+  const [selectedModel, setSelectedModel] = useState<ModelType>('kimi-k2.6');
   const [attachments, setAttachments] = useState<ProjectAttachment[]>([]);
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
@@ -446,6 +449,7 @@ function SessionView() {
   const [isSavingProjectChanges, setIsSavingProjectChanges] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRegeneratingCards, setIsRegeneratingCards] = useState(false);
+  const [generatingSections, setGeneratingSections] = useState<string[]>([]);
   const [workspaceView, setWorkspaceView] = useState<'brief' | 'canvas'>('canvas');
   const [isRightPanelCompact, setIsRightPanelCompact] = useState(() => {
     const stored = localStorage.getItem('bbp_right_panel_compact');
@@ -572,6 +576,25 @@ function SessionView() {
     setTimeout(() => setToastMessage(null), 5000);
   }, []);
 
+  useEffect(() => {
+    savingCardIdsRef.current = savingCardIds;
+  }, [savingCardIds]);
+
+  const mergeSessionCards = useCallback((incomingCards: CardData[]) => {
+    setCards((prevCards) => {
+      const pendingCardIds = savingCardIdsRef.current;
+      if (pendingCardIds.size === 0) return incomingCards;
+
+      const pendingCards = new Map(
+        prevCards
+          .filter((card) => pendingCardIds.has(card.id))
+          .map((card) => [card.id, card])
+      );
+
+      return incomingCards.map((card) => pendingCards.get(card.id) ?? card);
+    });
+  }, []);
+
   const getGuestEditPassword = useCallback(() => {
     if (!sessionId || isAdminVerified) return undefined;
     return sessionStorage.getItem(`session_${sessionId}_password`) || undefined;
@@ -663,7 +686,7 @@ function SessionView() {
     };
   }, [adminSessionId, isAdminVerified, handleExpiredAdminSession, sessionId]);
 
-  const shouldConnectPartyKit = !!sessionId && !!userProfile && !isCheckingAuth;
+  const shouldConnectPartyKit = !!sessionId && !!currentSession && !!userProfile && !isCheckingAuth && !showPasswordWall;
   const canConnectPartyKit = shouldConnectPartyKit && (!isAdminVerified || !!adminPartyKitToken);
   const partySessionId = shouldConnectPartyKit ? sessionId : null;
   const partyUserId = userProfile?.id || '';
@@ -707,6 +730,7 @@ function SessionView() {
       showToast(`${card.section}: New card added by collaborator`);
     },
     onCardUpdate: (cardId, updates) => {
+      if (savingCardIdsRef.current.has(cardId)) return;
       setLiveCardDrafts((prev) => {
         if (!prev[cardId]) return prev;
         const next = { ...prev };
@@ -992,7 +1016,7 @@ function SessionView() {
           if (isAdminVerified) {
             setShowPasswordWall(false);
             setIsEditMode(true);
-            setCards(data.cards || []);
+            mergeSessionCards(data.cards || []);
             setLiveCardDrafts({});
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
@@ -1016,7 +1040,7 @@ function SessionView() {
                   if (valid) {
                     setShowPasswordWall(false);
                     setIsEditMode(true);
-                    setCards(data.cards || []);
+                    mergeSessionCards(data.cards || []);
                     setLiveCardDrafts({});
                     setConnections(data.connections || []);
                     await loadAttachments(sessionId);
@@ -1038,7 +1062,7 @@ function SessionView() {
             } else {
               setShowPasswordWall(false);
               setIsEditMode(true);
-              setCards(data.cards || []);
+              mergeSessionCards(data.cards || []);
               setLiveCardDrafts({});
               setConnections(data.connections || []);
               await loadAttachments(sessionId);
@@ -1062,7 +1086,7 @@ function SessionView() {
     };
 
     loadSession();
-  }, [sessionId, isAdminVerified, adminSessionId, loadAttachments, loadNotes]);
+  }, [sessionId, isAdminVerified, adminSessionId, loadAttachments, loadNotes, mergeSessionCards]);
 
   useEffect(() => {
     if (!sessionId || isAdminVerified) return;
@@ -1077,7 +1101,7 @@ function SessionView() {
           setCurrentSession(data.session);
 
           if (data.session.onboarding_completed && !currentSession?.onboarding_completed) {
-            setCards(data.cards || []);
+            mergeSessionCards(data.cards || []);
             setLiveCardDrafts({});
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
@@ -1096,7 +1120,7 @@ function SessionView() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [sessionId, isAdminVerified, currentSession?.onboarding_completed, showPasswordWall, loadAttachments, loadNotes]);
+  }, [sessionId, isAdminVerified, currentSession?.onboarding_completed, showPasswordWall, loadAttachments, loadNotes, mergeSessionCards]);
 
   const verifyPassword = async (password: string): Promise<boolean> => {
     if (!sessionId) return false;
@@ -1118,7 +1142,7 @@ function SessionView() {
           const sessionResponse = await fetch(apiUrl(`/api/sessions/${sessionId}`));
           if (sessionResponse.ok) {
             const data = await sessionResponse.json();
-            setCards(data.cards || []);
+            mergeSessionCards(data.cards || []);
             setLiveCardDrafts({});
             setConnections(data.connections || []);
             await loadAttachments(sessionId);
@@ -1246,6 +1270,32 @@ function SessionView() {
     showToast('Project overview saved');
   };
 
+  const generateAndSaveCardsBySection = async (background: string, seedCards: CardData[] = []) => {
+    setGeneratingSections([...ACT1_SECTION_IDS]);
+
+    const results = await Promise.allSettled(ACT1_SECTION_IDS.map(async (section) => {
+      try {
+        const sectionCards = await generateCardsForSection(
+          projectData.client || currentSession?.name || '',
+          background,
+          projectData.notes,
+          section,
+          selectedModel,
+          seedCards
+        );
+
+        await createGeneratedCards(sectionCards);
+      } finally {
+        setGeneratingSections((sections) => sections.filter((id) => id !== section));
+      }
+    }));
+
+    const failedSection = results.find((result) => result.status === 'rejected');
+    if (failedSection) {
+      throw failedSection.reason;
+    }
+  };
+
   const handleRegenerateCards = async (backgroundOverride?: string) => {
     if (!sessionId || (!isAdminVerified && !isEditMode)) return;
 
@@ -1258,6 +1308,7 @@ function SessionView() {
     if (!confirmed) return;
 
     setIsRegeneratingCards(true);
+    setGeneratingSections([]);
     try {
       const nextBackground = backgroundOverride ?? projectData.background;
       if (backgroundOverride !== undefined) {
@@ -1287,20 +1338,14 @@ function SessionView() {
       setConnections([]);
       setSelectedCard(null);
 
-      const generatedCards = await generateCards(
-        projectData.client || currentSession?.name || '',
-        nextBackground,
-        projectData.notes,
-        selectedModel
-      );
-
-      await createGeneratedCards(generatedCards);
       setWorkspaceView('canvas');
+      await generateAndSaveCardsBySection(nextBackground);
       showToast('Cards regenerated from updated brief');
     } catch (error: any) {
       console.error('Error regenerating cards:', error);
       showToast(error.message || 'Failed to regenerate cards');
     } finally {
+      setGeneratingSections([]);
       setIsRegeneratingCards(false);
     }
   };
@@ -1314,22 +1359,17 @@ function SessionView() {
     }
 
     setIsGenerating(true);
+    setGeneratingSections([]);
     try {
       await saveProjectMetadata();
-
-      const generatedCards = await generateCards(
-        projectData.client || currentSession?.name || '',
-        projectData.background,
-        projectData.notes,
-        selectedModel
-      );
-      await createGeneratedCards(generatedCards);
-
       await completeOnboarding();
+      setWorkspaceView('canvas');
+      await generateAndSaveCardsBySection(projectData.background, cards);
     } catch (error: any) {
       console.error("Failed to generate cards", error);
       showToast("Failed to generate cards");
     } finally {
+      setGeneratingSections([]);
       setIsGenerating(false);
     }
   };
@@ -1482,7 +1522,7 @@ function SessionView() {
 
       const data = await response.json();
       setCurrentSession(data.session);
-      setCards(data.cards || []);
+      mergeSessionCards(data.cards || []);
       setLiveCardDrafts({});
       setConnections(data.connections || []);
       setAttachments(data.attachments || []);
@@ -1781,6 +1821,7 @@ function SessionView() {
   const handleCardUpdate = async (cardId: string, updates: Partial<CardData>) => {
     if (!sessionId) return;
 
+    setSavingCardIds((prev) => new Set(prev).add(cardId));
     try {
       const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards/${cardId}`), {
         method: 'PUT',
@@ -1805,6 +1846,13 @@ function SessionView() {
     } catch (error) {
       console.error('Error updating card:', error);
       throw error;
+    } finally {
+      setSavingCardIds((prev) => {
+        if (!prev.has(cardId)) return prev;
+        const next = new Set(prev);
+        next.delete(cardId);
+        return next;
+      });
     }
   };
 
@@ -1836,6 +1884,7 @@ function SessionView() {
       };
 
       setCards(prev => [...prev, newCard]);
+      sendCardDraft(newCard.id, newCard.content, true);
       sendCardCreate(newCard);
 
       return newCard.id;
@@ -1849,7 +1898,7 @@ function SessionView() {
     if (!sessionId) return;
 
     for (const card of generatedCards) {
-      await fetch(apiUrl(`/api/sessions/${sessionId}/cards`), {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cards`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1861,12 +1910,28 @@ function SessionView() {
           starred: card.starred
         }))
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to save generated card' }));
+        throw new Error(errorData.error || 'Failed to save generated card');
+      }
+
+      const data = await response.json();
+      if (data.card?.id) {
+        sendCardCreate({
+          id: data.card.id,
+          section: data.card.section,
+          content: data.card.content || card.content || '',
+          starred: data.card.starred || false,
+          order: data.card.order_index,
+        });
+      }
     }
 
     const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
     if (response.ok) {
       const data = await response.json();
-      setCards(data.cards || []);
+      mergeSessionCards(data.cards || []);
       setLiveCardDrafts({});
       setConnections(data.connections || []);
     }
@@ -2117,6 +2182,7 @@ function SessionView() {
                 projectData={projectData}
                 showToast={showToast}
                 selectedModel={selectedModel}
+                generatingSections={generatingSections}
                 isEditMode={isEditMode}
                 currentSession={currentSession}
                 onCardUpdate={handleCardUpdate}
@@ -2130,6 +2196,7 @@ function SessionView() {
                 onCursorMove={sendCursorMove}
                 activeUsers={activeUsers}
                 liveCardDrafts={liveCardDrafts}
+                savingCardIds={savingCardIds}
                 currentUserId={userProfile?.id || ''}
                 currentUserColor={userProfile?.color || partyUserColor}
                 activeTutorial={activeTutorial}

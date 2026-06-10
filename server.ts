@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import { Type } from "@google/genai";
 import dotenv from "dotenv";
 import { generateText, generateTextStream, getAiConfig } from "./src/server/ai";
@@ -515,7 +514,7 @@ export async function createApp() {
 
   app.post("/api/ai/complete", async (req, res) => {
     try {
-      const { prompt, model, responseFormat } = req.body;
+      const { prompt, model, responseFormat, maxOutputTokens } = req.body;
       if (!prompt) {
         return res.status(400).json({ error: "Prompt is required" });
       }
@@ -523,6 +522,7 @@ export async function createApp() {
       const text = await generateText({
         prompt,
         model: model || getAiConfig().defaultModel,
+        maxOutputTokens: Number.isFinite(Number(maxOutputTokens)) ? Number(maxOutputTokens) : undefined,
         ...(responseFormat === "json"
           ? {
               responseMimeType: "application/json" as const,
@@ -1914,6 +1914,7 @@ export async function createApp() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
         middlewareMode: true,

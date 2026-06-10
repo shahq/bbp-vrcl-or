@@ -14,6 +14,7 @@ export interface GenerateTextParams {
   history?: AIHistoryMessage[];
   message?: string;
   abortSignal?: AbortSignal;
+  maxOutputTokens?: number;
   responseMimeType?: "text/plain" | "application/json";
   responseSchema?: {
     type: Type;

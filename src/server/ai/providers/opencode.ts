@@ -69,6 +69,46 @@ function stripReasoningTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<think>[\s\S]*$/i, "").trim();
 }
 
+function getFallbackModels(requestedModel: string): string[] {
+  const configured = (process.env.OPENCODE_FALLBACK_MODELS || "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  const defaults = ["kimi-k2.6", "mimo-v2.5", "deepseek-v4-flash", "minimax-m3"];
+  const candidates = configured.length > 0 ? configured : defaults;
+  return candidates.filter((model) => model !== requestedModel);
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function requestOpencodeCompletion(params: GenerateTextParams, model: string): Promise<string> {
+  const response = await fetch(getOpencodeEndpoint(model), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getOpencodeApiKey()}`,
+    },
+    signal: params.abortSignal,
+    body: JSON.stringify({
+      model,
+      messages: toOpencodeMessages(params),
+      ...(params.maxOutputTokens ? { max_tokens: params.maxOutputTokens } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    const error = new Error(`Opencode API error: ${response.status} ${errorText}`);
+    (error as Error & { status?: number }).status = response.status;
+    throw error;
+  }
+
+  const data = await response.json();
+  return stripReasoningTags(data.choices?.[0]?.message?.content || "");
+}
+
 function createReasoningTagFilter() {
   const openTag = "<think>";
   const closeTag = "</think>";
@@ -128,26 +168,28 @@ function createReasoningTagFilter() {
 }
 
 export async function generateWithOpencode(params: GenerateTextParams): Promise<string> {
-  const response = await fetch(getOpencodeEndpoint(params.model), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getOpencodeApiKey()}`,
-    },
-    signal: params.abortSignal,
-    body: JSON.stringify({
-      model: params.model,
-      messages: toOpencodeMessages(params),
-    }),
-  });
+  const models = [params.model, ...getFallbackModels(params.model)];
+  let lastError: unknown;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Opencode API error: ${response.status} ${errorText}`);
+  for (const model of models) {
+    try {
+      return await requestOpencodeCompletion(params, model);
+    } catch (error) {
+      if (params.abortSignal?.aborted) {
+        throw error;
+      }
+
+      lastError = error;
+      const status = (error as Error & { status?: number }).status;
+      if (!status || !isRetryableStatus(status)) {
+        throw error;
+      }
+
+      console.warn(`Opencode model ${model} failed with retryable status ${status}; trying fallback model.`);
+    }
   }
 
-  const data = await response.json();
-  return stripReasoningTags(data.choices?.[0]?.message?.content || "");
+  throw lastError instanceof Error ? lastError : new Error("Opencode API failed for all configured models.");
 }
 
 export async function* streamWithOpencode(params: GenerateTextParams): AsyncGenerator<string> {
@@ -161,6 +203,7 @@ export async function* streamWithOpencode(params: GenerateTextParams): AsyncGene
     body: JSON.stringify({
       model: params.model,
       messages: toOpencodeMessages(params),
+      ...(params.maxOutputTokens ? { max_tokens: params.maxOutputTokens } : {}),
       stream: true,
     }),
   });

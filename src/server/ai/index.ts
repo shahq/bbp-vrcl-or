@@ -54,7 +54,7 @@ export function getDefaultModel(): string {
   }
 
   if (hasOpencodeApiKey()) {
-    return "minimax-m3";
+    return "kimi-k2.6";
   }
 
   if (hasOpenRouterApiKey()) {
@@ -89,7 +89,7 @@ function getFallbackModel(provider: AIProviderName): string {
     return "claude-3-5-haiku-latest";
   }
 
-  return "minimax-m3";
+  return "kimi-k2.6";
 }
 
 function isProviderAvailable(provider: AIProviderName): boolean {

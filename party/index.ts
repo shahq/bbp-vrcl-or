@@ -94,6 +94,12 @@ interface SessionSettingsTokenPayload {
 
 const ACTIVE_THRESHOLD = 30000;
 const SNAPSHOT_INTERVAL = 30000;
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
 
 function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
@@ -504,6 +510,13 @@ export default class SessionServer implements Party.Server {
     const normalizedPath = url.pathname.replace(/\/+$/, "") || "/";
     const isRoomRoot = normalizedPath === "/" || normalizedPath.endsWith(`/${this.room.id}`);
 
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: CORS_HEADERS,
+      });
+    }
+
     if (req.method === "GET" && (isRoomRoot || normalizedPath.endsWith("/health"))) {
       return new Response(JSON.stringify({
         status: "ok",
@@ -511,11 +524,14 @@ export default class SessionServer implements Party.Server {
         ...this.getSnapshotMessage(),
         lastActivity: this.state.lastActivity,
       }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
       });
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response("Not found", {
+      status: 404,
+      headers: CORS_HEADERS,
+    });
   }
 
   onAlarm(): void {

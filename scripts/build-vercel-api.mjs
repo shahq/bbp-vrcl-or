@@ -8,5 +8,5 @@ await build({
   target: "node22",
   format: "cjs",
   sourcemap: true,
-  external: ["better-sqlite3", "vite"],
+  external: ["better-sqlite3", "pdf-parse", "vite", "word-extractor"],
 });

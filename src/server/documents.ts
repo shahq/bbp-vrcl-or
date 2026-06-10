@@ -3,8 +3,6 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import JSZip from "jszip";
-import { PDFParse } from "pdf-parse";
-import WordExtractor from "word-extractor";
 
 const execFileAsync = promisify(execFile);
 const TEXT_EXTENSIONS = new Set([".txt", ".md"]);
@@ -36,7 +34,7 @@ function getPythonExecutable(): string {
     "python3",
   ].filter(Boolean) as string[];
 
-  return candidates[0];
+  return candidates.find((candidate) => !path.isAbsolute(candidate) || fs.existsSync(candidate)) || "python3";
 }
 
 function limitText(value: string, limit = 20_000): string {
@@ -53,6 +51,7 @@ function extractPlainText(filePath: string): Pick<ProjectAttachment, "extraction
 }
 
 async function extractPdfText(filePath: string): Promise<Pick<ProjectAttachment, "extractionStatus" | "extractedText" | "summary">> {
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: fs.readFileSync(filePath) });
   try {
     const result = await parser.getText();
@@ -105,6 +104,7 @@ async function extractDocxText(filePath: string): Promise<Pick<ProjectAttachment
 }
 
 async function extractLegacyDocText(filePath: string): Promise<Pick<ProjectAttachment, "extractionStatus" | "extractedText" | "summary">> {
+  const { default: WordExtractor } = await import("word-extractor");
   const extractor = new WordExtractor();
   const document = await extractor.extract(fs.readFileSync(filePath));
   const text = limitText([
@@ -122,6 +122,42 @@ async function extractLegacyDocText(filePath: string): Promise<Pick<ProjectAttac
     extractedText: text,
     summary: text ? text.slice(0, 500) : `Uploaded Word document: ${path.basename(filePath)}`,
   };
+}
+
+async function extractWithPythonFallback(filePath: string): Promise<Pick<ProjectAttachment, "extractionStatus" | "extractedText" | "summary">> {
+  const scriptPath = path.join(process.cwd(), "scripts", "extract_attachment.py");
+  const python = getPythonExecutable();
+
+  if (!fs.existsSync(scriptPath)) {
+    return {
+      extractionStatus: "error",
+      extractedText: "",
+      summary: "Attachment extractor script is missing.",
+    };
+  }
+
+  try {
+    const { stdout } = await execFileAsync(python, [scriptPath, filePath], {
+      cwd: process.cwd(),
+      maxBuffer: 1024 * 1024 * 10,
+    });
+    const parsed = JSON.parse(stdout);
+    const extractedText = typeof parsed.extractedText === "string" ? parsed.extractedText.trim() : "";
+    const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+
+    return {
+      extractionStatus: extractedText || summary ? "ready" : "unsupported",
+      extractedText,
+      summary: summary || "Document uploaded successfully.",
+    };
+  } catch (error: any) {
+    console.error("Attachment extraction error:", error);
+    return {
+      extractionStatus: "error",
+      extractedText: "",
+      summary: "We stored the file, but extraction failed for this document.",
+    };
+  }
 }
 
 function shouldUseNativeTextExtraction(filePath: string, mimeType?: string): boolean {
@@ -170,11 +206,7 @@ export async function extractAttachmentContent(
       return await extractPdfText(filePath);
     } catch (error) {
       console.error("Native PDF attachment extraction error:", error);
-      return {
-        extractionStatus: "error",
-        extractedText: "",
-        summary: "We stored the file, but PDF extraction failed for this document.",
-      };
+      return extractWithPythonFallback(filePath);
     }
   }
 
@@ -204,37 +236,5 @@ export async function extractAttachmentContent(
     }
   }
 
-  const scriptPath = path.join(process.cwd(), "scripts", "extract_attachment.py");
-  const python = getPythonExecutable();
-
-  if (!fs.existsSync(scriptPath)) {
-    return {
-      extractionStatus: "error",
-      extractedText: "",
-      summary: "Attachment extractor script is missing.",
-    };
-  }
-
-  try {
-    const { stdout } = await execFileAsync(python, [scriptPath, filePath], {
-      cwd: process.cwd(),
-      maxBuffer: 1024 * 1024 * 10,
-    });
-    const parsed = JSON.parse(stdout);
-    const extractedText = typeof parsed.extractedText === "string" ? parsed.extractedText.trim() : "";
-    const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
-
-    return {
-      extractionStatus: extractedText || summary ? "ready" : "unsupported",
-      extractedText,
-      summary: summary || "Document uploaded successfully.",
-    };
-  } catch (error: any) {
-    console.error("Attachment extraction error:", error);
-    return {
-      extractionStatus: "error",
-      extractedText: "",
-      summary: "We stored the file, but extraction failed for this document.",
-    };
-  }
+  return extractWithPythonFallback(filePath);
 }

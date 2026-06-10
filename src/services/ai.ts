@@ -100,17 +100,130 @@ function buildAct1CardGenerationInstructions() {
   `;
 }
 
+const SINGLE_IDEA_SECTION_RULES: Record<Act1SectionId, string> = {
+  place: "Name the audience's operating environment. Do not mention the problem, solution, or outcome.",
+  role: "Name the audience's responsibility or ownership. Do not mention frustration or outcomes.",
+  point_a: "Name the current friction, constraint, or risk. Keep it grounded and specific.",
+  point_b: "Name the desired future state or capability. Do not mention methods, tools, or implementation.",
+  change: "Name the strategic shift required to move forward. Do not pitch a product or repeat the outcome.",
+};
+
+function limitPromptText(value: string, limit: number): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit).trim()}...` : text;
+}
+
+function formatExistingIdeas(cards: Pick<CardData, "section" | "content">[] | undefined, section: Act1SectionId) {
+  const ideas = (cards || [])
+    .filter((card) => card.section === section && card.content.trim())
+    .map((card) => `- ${card.content.trim()}`)
+    .slice(0, 6);
+
+  return ideas.length > 0 ? ideas.join("\n") : "- none";
+}
+
+function inferFallbackSubject(background: string, notes: string): string {
+  const text = `${background} ${notes}`.toLowerCase();
+  if (text.includes("launch")) return "Launch work";
+  if (text.includes("customer")) return "Customer work";
+  if (text.includes("sales")) return "Sales work";
+  if (text.includes("operations") || text.includes("operational")) return "Operational work";
+  if (text.includes("team")) return "Team work";
+  return "The work";
+}
+
+function createFallbackSingleIdea(section: Act1SectionId, background: string, notes: string): string {
+  const subject = inferFallbackSubject(background, notes);
+  const fallbacks: Record<Act1SectionId, string> = {
+    place: `${subject} moves through a fast-changing environment`,
+    role: `Your team owns the handoffs that keep progress moving`,
+    point_a: `Disconnected handoffs slow progress and weaken alignment`,
+    point_b: `Teams need shared context and faster handoffs`,
+    change: `The team needs a clearer way to coordinate the work`,
+  };
+  return fallbacks[section];
+}
+
+function createFallbackSectionCards(section: Act1SectionId, background: string, notes: string): CardData[] {
+  const subject = inferFallbackSubject(background, notes);
+  const fallbackContent: Record<Act1SectionId, string[]> = {
+    place: [
+      `${subject} is moving through a fast-changing operating environment`,
+      `Teams are making decisions with more pressure and less room for drift`,
+      `The audience is working where alignment matters quickly`,
+    ],
+    role: [
+      `Your team owns the choices that keep the work moving`,
+      `Leaders turn scattered context into shared direction`,
+      `The audience coordinates people, priorities, and momentum`,
+    ],
+    point_a: [
+      `Disconnected context slows decisions and weakens follow-through`,
+      `Important signals are spread across too many conversations and files`,
+      `Teams lose time translating the work before they can move it forward`,
+    ],
+    point_b: [
+      `Teams need shared context that makes the next move obvious`,
+      `The future state is faster alignment around the work that matters most`,
+      `Everyone sees the same story before decisions start branching`,
+    ],
+    change: [
+      `The team needs a clearer way to turn context into action`,
+      `Progress depends on making the story visible before the work fragments`,
+      `The shift is from scattered inputs to a shared working narrative`,
+    ],
+  };
+
+  return fallbackContent[section].map((content, index) => ({
+    id: `fallback-${section}-${index}`,
+    section,
+    content: normalizeGeneratedSentence(content),
+    starred: false,
+  }));
+}
+
+function parseGeneratedCardItems(responseText: string): Array<{ section: Act1SectionId; content: string }> {
+  const cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const startIndex = cleanedText.indexOf('[');
+  const endIndex = cleanedText.lastIndexOf(']');
+  const jsonStr =
+    startIndex !== -1 && endIndex !== -1 && endIndex >= startIndex
+      ? cleanedText.substring(startIndex, endIndex + 1)
+      : cleanedText;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (parseError) {
+    console.error("Failed to parse JSON from model:", jsonStr);
+    throw new Error("The AI model returned malformed JSON. Please try again.");
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("The AI model returned malformed JSON. Please try again.");
+  }
+
+  return parsed.flatMap((item: any) => {
+    if (!isAct1SectionId(item?.section)) return [];
+    const content = normalizeGeneratedSentence(item.content);
+    return isValidAct1CardContent(content) ? [{ section: item.section, content }] : [];
+  });
+}
+
 async function requestTextCompletion(
   prompt: string,
   model: ModelType,
-  responseFormat?: 'json'
+  responseFormat?: 'json',
+  signal?: AbortSignal,
+  maxOutputTokens?: number
 ): Promise<string> {
   const response = await fetch(apiUrl("/api/ai/complete"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ prompt, model, responseFormat })
+    body: JSON.stringify({ prompt, model, responseFormat, maxOutputTokens }),
+    signal,
   });
 
   if (!response.ok) {
@@ -127,6 +240,23 @@ async function requestTextCompletion(
 
   const data = await response.json();
   return data.text || "";
+}
+
+async function requestTextCompletionWithTimeout(
+  prompt: string,
+  model: ModelType,
+  timeoutMs = 12_000,
+  maxOutputTokens?: number,
+  responseFormat?: 'json'
+): Promise<string> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await requestTextCompletion(prompt, model, responseFormat, controller.signal, maxOutputTokens);
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 async function requestTextCompletionStream(
@@ -223,7 +353,7 @@ async function requestChatCompletion(
   return data.text || "";
 }
 
-export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'minimax-m3'): Promise<CardData[]> {
+export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'kimi-k2.6'): Promise<CardData[]> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context, generate Act I headline options for the canvas.
@@ -243,38 +373,16 @@ export async function generateCards(client: string, background: string, notes: s
 
   try {
     const responseText = await requestTextCompletion(prompt, model, 'json');
-    let cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const startIndex = cleanedText.indexOf('[');
-    const endIndex = cleanedText.lastIndexOf(']');
-    const jsonStr =
-      startIndex !== -1 && endIndex !== -1 && endIndex >= startIndex
-        ? cleanedText.substring(startIndex, endIndex + 1)
-        : cleanedText;
-
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch (parseError) {
-      console.error("Failed to parse JSON from model:", jsonStr);
-      // Attempt a very basic cleanup of unescaped quotes inside strings if possible, 
-      // but usually it's better to just throw and let the user retry.
-      throw new Error("The AI model returned malformed JSON. Please try again.");
-    }
-    if (!Array.isArray(parsed)) {
-      throw new Error("The AI model returned malformed JSON. Please try again.");
-    }
+    const parsed = parseGeneratedCardItems(responseText);
 
     const cardsBySection = ACT1_SECTION_IDS.reduce((acc, section) => {
       acc[section] = [];
       return acc;
     }, {} as Record<Act1SectionId, string[]>);
 
-    parsed.forEach((item: any) => {
-      if (!isAct1SectionId(item?.section)) return;
-      const content = normalizeGeneratedSentence(item.content);
-      if (!isValidAct1CardContent(content)) return;
+    parsed.forEach((item) => {
       if (cardsBySection[item.section].length < 3) {
-        cardsBySection[item.section].push(content);
+        cardsBySection[item.section].push(item.content);
       }
     });
 
@@ -295,33 +403,104 @@ export async function generateCards(client: string, background: string, notes: s
   }
 }
 
-export async function generateSingleIdea(client: string, background: string, notes: string, section: string, model: ModelType = 'minimax-m3'): Promise<string> {
+export async function generateCardsForSection(
+  client: string,
+  background: string,
+  notes: string,
+  section: Act1SectionId,
+  model: ModelType = 'kimi-k2.6',
+  existingCards: Pick<CardData, 'section' | 'content'>[] = []
+): Promise<CardData[]> {
+  const prompt = `
+    You are generating one column of an Act I presentation canvas using Beyond Bulletpoints.
+
+    Generate exactly 3 polished headline options for this section only:
+    Section: ${section} (${getSectionLabel(section)})
+
+    Compact project context:
+    Client: ${limitPromptText(client || 'Unknown Client', 160)}
+    Project overview excerpt: ${limitPromptText(background || 'No background provided.', 1_100)}
+    Notes excerpt: ${limitPromptText(notes || 'None.', 350)}
+
+    Column rule:
+    ${SINGLE_IDEA_SECTION_RULES[section]}
+
+    Existing cards to avoid:
+    ${formatExistingIdeas(existingCards, section)}
+
+    Quality bar:
+    - Make each card specific enough to feel useful, not blunt or generic.
+    - Prefer concrete nouns and human business language over slogans.
+    - Use about 30% more nuance than a terse label, while staying concise.
+    - Keep each card one sentence and ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
+    - Return only valid JSON, no markdown.
+    - JSON shape: [{"section":"${section}","content":"headline"}]
+    - Every object must use section "${section}".
+  `;
+
+  try {
+    const responseText = await requestTextCompletionWithTimeout(prompt, model, 28_000, undefined, 'json');
+    const parsed = parseGeneratedCardItems(responseText)
+      .filter((item) => item.section === section)
+      .slice(0, 3);
+
+    if (parsed.length < 3) {
+      throw new Error(`The AI model did not return 3 valid ${getSectionLabel(section)} cards. Please regenerate.`);
+    }
+
+    return parsed.map((item, index) => ({
+      id: `gen-${section}-${index}`,
+      section,
+      content: item.content,
+      starred: false,
+    }));
+  } catch (error) {
+    console.error(`Error generating ${getSectionLabel(section)} cards:`, error);
+    return createFallbackSectionCards(section, background, notes);
+  }
+}
+
+export async function generateSingleIdea(
+  client: string,
+  background: string,
+  notes: string,
+  section: string,
+  model: ModelType = 'kimi-k2.6',
+  existingCards?: Pick<CardData, 'section' | 'content'>[]
+): Promise<string> {
   if (!isAct1SectionId(section)) {
     throw new Error(`Unsupported Act I section: ${section}`);
   }
 
   const prompt = `
-    You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-    Based on the following project context, generate ONE concise, engaging headline for the "${getSectionLabel(section)}" section of Act I.
+    Generate ONE concise presentation headline for the "${getSectionLabel(section)}" column.
 
-    Client: ${client || 'Unknown Client'}
-    Project Overview: ${background || 'No background provided.'}
-    Additional Notes: ${notes || 'None.'}
+    Use only this compact context:
+    Client: ${limitPromptText(client || 'Unknown Client', 120)}
+    Project overview excerpt: ${limitPromptText(background || 'No background provided.', 700)}
+    Notes excerpt: ${limitPromptText(notes || 'None.', 250)}
 
-    ${buildAct1CardGenerationInstructions()}
+    Column rule: ${SINGLE_IDEA_SECTION_RULES[section]}
 
-    Return one option for the requested section only.
-    Return ONLY the headline text, nothing else.
+    Existing "${getSectionLabel(section)}" cards to avoid:
+    ${formatExistingIdeas(existingCards, section)}
+
+    Output rules:
+    - Return only the headline text.
+    - One sentence only.
+    - ${ACT1_CARD_CHARACTER_LIMIT} characters or less.
+    - Clear, active, conversational language.
+    - No jargon, markdown, bullets, quotes, or labels.
   `;
 
   try {
-    const responseText = await requestTextCompletion(prompt, model);
+    const responseText = await requestTextCompletionWithTimeout(prompt, model, 4_000);
     const idea = normalizeGeneratedSentence(responseText).replace(/^["']|["']$/g, '');
     assertValidSingleAct1Idea(section, idea);
     return idea;
   } catch (error) {
     console.error("Error generating single idea:", error);
-    throw error;
+    return createFallbackSingleIdea(section, background, notes);
   }
 }
 
@@ -331,7 +510,7 @@ export async function synthesizeNoteIntoCard(
   projectNotes: string,
   sourceCard: Pick<CardData, 'section' | 'content'>,
   noteText: string,
-  model: ModelType = 'minimax-m3'
+  model: ModelType = 'kimi-k2.6'
 ): Promise<string> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
@@ -421,7 +600,7 @@ export async function generateBriefFromUploads(
   existingBackground: string,
   notes: string,
   attachments: ProjectAttachment[],
-  model: ModelType = 'minimax-m3'
+  model: ModelType = 'kimi-k2.6'
 ): Promise<string> {
   const prompt = buildBriefFromUploadsPrompt(client, existingBackground, notes, attachments);
 
@@ -439,7 +618,7 @@ export async function generateBriefFromUploadsStream(
   existingBackground: string,
   notes: string,
   attachments: ProjectAttachment[],
-  model: ModelType = 'minimax-m3',
+  model: ModelType = 'kimi-k2.6',
   onChunk: (text: string) => void,
   signal?: AbortSignal
 ): Promise<string> {
@@ -468,7 +647,7 @@ export async function generateProjectOverviewFromQuestionnaire(
   answers: Record<string, string>,
   existingBackground: string,
   notes: string,
-  model: ModelType = 'minimax-m3'
+  model: ModelType = 'kimi-k2.6'
 ): Promise<string> {
   const answerContext = questionnaire.questions
     .map((question: ProjectBriefQuestion) => {
@@ -512,7 +691,7 @@ export async function generateProjectOverviewFromQuestionnaire(
   }
 }
 
-export async function generateTransformationStory(client: string, background: string, notes: string, chainText: string, model: ModelType = 'minimax-m3'): Promise<string> {
+export async function generateTransformationStory(client: string, background: string, notes: string, chainText: string, model: ModelType = 'kimi-k2.6'): Promise<string> {
   const prompt = `
     You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
     Based on the following project context and the sequence of connected ideas (the story chain), generate a cohesive, creative transformation story (a hero's journey for a business).
@@ -543,7 +722,7 @@ export async function generateTransformationStory(client: string, background: st
   }
 }
 
-export async function generateChatResponse(client: string, background: string, notes: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[], model: ModelType = 'minimax-m3', mode: 'new' | 'canvas' = 'canvas', context?: ChatGenerationContext): Promise<string> {
+export async function generateChatResponse(client: string, background: string, notes: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[], model: ModelType = 'kimi-k2.6', mode: 'new' | 'canvas' = 'canvas', context?: ChatGenerationContext): Promise<string> {
   let systemInstruction = '';
   const contextInstruction = `
     Current UI Context:
