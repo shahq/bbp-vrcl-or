@@ -10,19 +10,19 @@ import fs from 'fs';
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'sessions.db');
 
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+let database: Database.Database | null = null;
 
-// Initialize database
-const db = new Database(DB_PATH);
+function initializeDatabase() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
 
-// Enable WAL mode for better performance
-// db.pragma('journal_mode = WAL');
+  const db = new Database(DB_PATH);
 
-// Create tables if they don't exist
-db.exec(`
+  // Enable WAL mode for better performance
+  // db.pragma('journal_mode = WAL');
+
+  db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -70,25 +70,41 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_connections_session ON connections(session_id);
 `);
 
-const connectionColumns = db.prepare(`PRAGMA table_info(connections)`).all() as Array<{ name: string }>;
-const hasConnectionColumn = (name: string) => connectionColumns.some((column) => column.name === name);
-const sessionColumns = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>;
-const hasSessionColumn = (name: string) => sessionColumns.some((column) => column.name === name);
+  const connectionColumns = db.prepare(`PRAGMA table_info(connections)`).all() as Array<{ name: string }>;
+  const hasConnectionColumn = (name: string) => connectionColumns.some((column) => column.name === name);
+  const sessionColumns = db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>;
+  const hasSessionColumn = (name: string) => sessionColumns.some((column) => column.name === name);
 
-if (!hasSessionColumn('timer_control_mode')) {
-  db.exec(`ALTER TABLE sessions ADD COLUMN timer_control_mode TEXT DEFAULT 'admin'`);
+  if (!hasSessionColumn('timer_control_mode')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN timer_control_mode TEXT DEFAULT 'admin'`);
+  }
+
+  if (!hasConnectionColumn('thread_id')) {
+    db.exec(`ALTER TABLE connections ADD COLUMN thread_id TEXT`);
+  }
+
+  if (!hasConnectionColumn('color')) {
+    db.exec(`ALTER TABLE connections ADD COLUMN color TEXT`);
+  }
+
+  if (!hasConnectionColumn('owner_user_id')) {
+    db.exec(`ALTER TABLE connections ADD COLUMN owner_user_id TEXT`);
+  }
+
+  return db;
 }
 
-if (!hasConnectionColumn('thread_id')) {
-  db.exec(`ALTER TABLE connections ADD COLUMN thread_id TEXT`);
+function getDatabase() {
+  database ??= initializeDatabase();
+  return database;
 }
 
-if (!hasConnectionColumn('color')) {
-  db.exec(`ALTER TABLE connections ADD COLUMN color TEXT`);
-}
-
-if (!hasConnectionColumn('owner_user_id')) {
-  db.exec(`ALTER TABLE connections ADD COLUMN owner_user_id TEXT`);
-}
+const db = new Proxy({} as Database.Database, {
+  get(_target, property) {
+    const instance = getDatabase();
+    const value = Reflect.get(instance, property, instance);
+    return typeof value === 'function' ? value.bind(instance) : value;
+  },
+});
 
 export default db;
