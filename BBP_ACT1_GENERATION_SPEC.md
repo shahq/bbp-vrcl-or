@@ -5,9 +5,9 @@ This system generates 3 single-sentence options for each ACT 1 section of a Beyo
 
 1. Setting
 2. Role
-3. Point A (Current State / Challenge)
-4. Point B (Desired State)
-5. Call to Action
+3. Challenge
+4. Desired end state
+5. How do we get there?
 
 The goal is to produce concise, high-impact, presentation-ready narrative statements that form a coherent story when read in sequence.
 
@@ -33,9 +33,11 @@ For each section:
 - Generate 3 options
 - Each option must be:
   - A single sentence
-  - 90 characters or less
+  - 80 characters or less for generation
   - One idea only
   - Standalone readable
+
+The application validates saved Act I cards against a 90-character limit. The generation prompt uses an 80-character target to leave room for model variation.
 
 ---
 
@@ -67,7 +69,7 @@ Do NOT include:
 - Technical architecture
 - Marketing claims
 - Company-centric framing
-- Solution details (except Call to Action)
+- Solution details (except How do we get there?)
 
 ---
 
@@ -138,7 +140,7 @@ Across all options:
 
 ACT 1 is a progressive argument:
 
-Setting → Role → Point A → Point B → Call to Action
+Setting -> Role -> Challenge -> Desired end state -> How do we get there?
 
 Each section must:
 - Add new information
@@ -151,9 +153,9 @@ Each section must:
 
 - Setting → establishes environment
 - Role → defines responsibility
-- Point A → identifies friction or challenge
-- Point B → defines desired future state
-- Call to Action → defines required shift to reach it
+- Challenge -> identifies friction or challenge
+- Desired end state -> defines desired future state
+- How do we get there? -> defines required shift to reach it
 
 ---
 
@@ -161,8 +163,8 @@ Each section must:
 
 Do NOT:
 - Restate previous section in different words
-- Mirror Point A in Point B form
-- Turn Point B into Call to Action wording
+- Mirror Challenge in Desired end state form
+- Turn Desired end state into How do we get there? wording
 
 Each section must ADVANCE the narrative.
 
@@ -172,9 +174,9 @@ Each section must ADVANCE the narrative.
 
 Stakes evolve across the narrative:
 
-- Point A → introduces selective consequences
-- Point B → shows benefit of resolving consequences
-- Call to Action → defines shift required to unlock outcome
+- Challenge -> introduces selective consequences
+- Desired end state -> shows benefit of resolving consequences
+- How do we get there? -> defines shift required to unlock outcome
 
 Do NOT reuse identical language across sections.
 
@@ -307,7 +309,7 @@ Audience + responsibility
 
 ---
 
-# 3. POINT A (CURRENT STATE / CHALLENGE)
+# 3. CHALLENGE
 
 ## Purpose
 Describe current friction or limitation.
@@ -374,7 +376,7 @@ Stakes must:
 
 ---
 
-# 4. POINT B (DESIRED STATE)
+# 4. DESIRED END STATE
 
 ## Purpose
 Define future state.
@@ -401,10 +403,10 @@ Outcome state
 
 ---
 
-# 5. CALL TO ACTION
+# 5. HOW DO WE GET THERE?
 
 ## Purpose
-Define required shift to move from Point A to Point B.
+Define required shift to move from Challenge to Desired end state.
 
 ## Formula
 Strategic action or mindset shift
@@ -418,7 +420,7 @@ Strategic action or mindset shift
 ## Exclude
 - Product pitches
 - Benefits
-- Outcomes already stated in Point B
+- Outcomes already stated in Desired end state
 
 ## Examples
 - A more proactive approach becomes essential
@@ -433,7 +435,7 @@ Strategic action or mindset shift
 
 ACT 1 is a progressive argument:
 
-Setting → Role → Point A → Point B → Call to Action
+Setting -> Role -> Challenge -> Desired end state -> How do we get there?
 
 Each step must:
 - Increase clarity
@@ -456,8 +458,8 @@ Each section must NOT:
 
 Avoid:
 - “same idea, different wording”
-- CTA repeating Point B
-- Point B mirroring Point A positively
+- How do we get there? repeating Desired end state
+- Desired end state mirroring Challenge positively
 - over-symmetry across sections
 
 ---
@@ -467,10 +469,11 @@ Avoid:
 Before output:
 
 - 3 options per section
-- ≤ 90 characters per sentence
+- 80 characters or less per generated sentence
+- 90 characters or less per saved Act I card
 - One idea per sentence
 - Consistent perspective
 - No repetition across sections
-- Narrative flows naturally from Setting → CTA
+- Narrative flows naturally from Setting to How do we get there?
 - Sentences are compressed, not verbose
 - Each line sounds natural when spoken aloud

@@ -19,7 +19,7 @@ Beyond Bullet Points is a collaborative storytelling canvas for building present
   - `role`
   - `point_a`
   - `point_b`
-  - `change` (Call to Action)
+  - `change` (How do we get there?)
   - `story`
 - Cards can be created, edited, reordered, starred, connected, and exported.
 - Each participant has a personal color-coded story thread. Users can share the same cards as other participants without blocking each other's paths.
@@ -241,7 +241,7 @@ npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
 - Live cursors, presence, and card updates sync in real time through PartyKit.
 - The canvas timer can run as a shared PartyKit timer. Admins choose per session whether only admins or everyone can control it.
 - Thread colors distinguish participant-owned story paths across connected cards.
-- Each participant can have one active linear story thread across the ordered columns: `place` (Setting) -> `role` -> `point_a` -> `point_b` -> `change` (Call to Action) -> `story`.
+- Each participant can have one active linear story thread across the ordered columns: `place` (Setting) -> `role` -> `point_a` (Challenge) -> `point_b` (Desired end state) -> `change` (How do we get there?) -> `story`.
 - Multiple participants can connect through the same card because connection identity includes the thread owner instead of only `from` and `to`.
 - **Assemble My Story** uses only the current user's thread and sorts connected cards by column sequence, not by the order in which connections were created.
 - Story cards are treated as generated results, so unconnected story cards are not dimmed when a user's thread changes.
@@ -265,8 +265,8 @@ The server exposes endpoints for:
 ## Recent Changes
 
 ### Act I Generation Update (2026-06-05)
-- **Five live Act I sections:** The canvas now uses Setting, Role, Point A, Point B, and Call to Action plus Story. Persisted IDs remain `place`, `role`, `point_a`, `point_b`, `change`, and `story`.
-- **Updated generation contract:** Generated cards follow `BBP_ACT1_GENERATION_SPEC.md`, producing three 90-character headline options per live section with varied openings and no required "You are" prefix.
+- **Five live Act I sections:** The canvas now uses Setting, Role, Challenge, Desired end state, and How do we get there? plus Story. Persisted IDs remain `place`, `role`, `point_a`, `point_b`, `change`, and `story`.
+- **Updated generation contract:** Generated cards are built from `src/config/act1PromptSpec.ts` and documented in `BBP_ACT1_GENERATION_SPEC.md`, producing three 80-character headline options per live section with a 90-character saved-card validation limit, varied openings, and no required "You are" prefix.
 - **Live timer mode:** The top-bar timer now syncs through PartyKit on the canvas. Admins can set each session to admin-only timer control or everyone-can-control mode.
 
 ### UI Cleanup (2026-05-27)
@@ -309,7 +309,7 @@ The server exposes endpoints for:
 - **Upload-generated brief:** New Project uploads can now be synthesized into a project overview brief through the AI provider seam, using extracted text, summaries, and per-upload source notes.
 - **Brief edit flow:** The brief can be saved without generating a canvas; completed canvases can return to the brief; edit-mode users can regenerate cards behind a destructive confirmation.
 - **Canvas brief panel:** The right panel now shows a collapsible `Project overview [project name]` accordion instead of disconnected hero/challenge labels.
-- **Chat workspace polish:** The chat context block is hidden for now, the composer is more compact, and selected cards appear as small context pills such as `Point A-2`.
+- **Chat workspace polish:** The chat context block is hidden for now, the composer is more compact, and selected cards appear as small context pills such as `Challenge-2`.
 - **Selection behavior:** Clicking empty canvas space clears the selected card and hides the composer pill.
 - **Generated-card refresh:** AI-generated ideas for empty cards now replace the editing placeholder immediately when generation completes.
 

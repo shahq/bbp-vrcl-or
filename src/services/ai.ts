@@ -1,4 +1,9 @@
 import { apiUrl } from '../config/api';
+import {
+  buildAct1BulkCardPrompt,
+  buildAct1SectionCardPrompt,
+  buildAct1SingleIdeaPrompt,
+} from '../config/act1PromptSpec';
 import type { ProjectBriefQuestion, ProjectBriefQuestionnaire } from '../config/projectBriefQuestionnaire';
 import {
   ACT1_CARD_CHARACTER_LIMIT,
@@ -85,48 +90,6 @@ function formatChatAttachmentContext(attachments: ChatGenerationContext['attachm
       extractedText ? `        Extracted text excerpt: ${extractedText}` : '',
     ].filter(Boolean).join('\n');
   }).join('\n');
-}
-
-function buildAct1CardGenerationInstructions() {
-  return `
-    ACT 1 generation rules:
-    - Generate Act I as a progressive narrative argument, not isolated sentences.
-    - The flow is Setting -> Role -> Challenge -> Desired end state -> How do we get there?
-    - Each section must introduce new information, increase clarity or urgency, and move the story forward.
-    - Generate exactly 3 options per section.
-    - Each option must be a single sentence of ${ACT1_CARD_GENERATION_TARGET} characters or less.
-    - Each option must contain one idea only and be readable as a standalone presentation headline.
-    - Use active voice, present tense, clear conversational language, audience-focused framing, and compressed phrasing.
-    - Avoid corporate jargon, buzzwords, marketing language, sales language, formal phrasing, and multi-idea sentences.
-    - Do not include product names, product features, implementation details, technical architecture, marketing claims, company-centric framing, or solution details except in How do we get there?
-    - Determine direct audience mode ("you", "your") or shared perspective mode ("we", "our", "us") from the Project Overview.
-    - Use the same perspective across all five sections.
-    - Do not default to "You..." for every sentence.
-    - Vary openings across pronoun-led, environment-led, situation-led, pressure-led, and outcome-led structures.
-    - Across all options, no more than 2 sentences should start with the same word.
-    - Do not repeat previous sections, mirror Challenge in Desired end state form, or turn Desired end state into How do we get there? wording.
-    - Before returning, verify: 3 options per section, ${ACT1_CARD_GENERATION_TARGET} characters or less, one idea per sentence, consistent perspective, no repetition, natural spoken phrasing.
-
-    Section-specific rules:
-    - place (Setting): Define the environment the audience operates in. Include industry conditions, external pressures, market dynamics, or operational environment. Exclude problems, solutions, and outcomes.
-    - role (Role): Define audience responsibility. Include accountability, ownership, leadership, or mission. Exclude problems, outcomes, and frustration.
-    - point_a (Challenge): Describe current friction or limitation. Include friction, inefficiency, constraints, or selective grounded risks. At least 1 option should be a standard challenge; at least 2 should include stakes when contextually appropriate. Avoid exaggeration and fear-based language.
-    - point_b (Desired end state): Define the desired future state. Include improved capability, success state, or operational benefit. Exclude methods, tools, and implementation.
-    - change (How do we get there?): Define the required shift to move from Challenge to Desired end state. Include decisions, commitments, strategic shifts, or organizational change. Exclude product pitches, benefits, and outcomes already stated in Desired end state.
-  `;
-}
-
-const SINGLE_IDEA_SECTION_RULES: Record<Act1SectionId, string> = {
-  place: "Name the audience's operating environment. Do not mention the problem, solution, or outcome.",
-  role: "Name the audience's responsibility or ownership. Do not mention frustration or outcomes.",
-  point_a: "Name the current friction, constraint, or risk. Keep it grounded and specific.",
-  point_b: "Name the desired future state or capability. Do not mention methods, tools, or implementation.",
-  change: "Name the strategic shift required to move forward. Do not pitch a product or repeat the outcome.",
-};
-
-function limitPromptText(value: string, limit: number): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > limit ? `${text.slice(0, limit).trim()}...` : text;
 }
 
 function formatExistingIdeas(cards: Pick<CardData, "section" | "content">[] | undefined, section: Act1SectionId) {
@@ -399,22 +362,7 @@ async function requestChatCompletion(
 
 export async function generateCards(client: string, background: string, notes: string, model: ModelType = 'kimi-k2.6'): Promise<CardData[]> {
   console.log('[AI] generateCards START:', { client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model });
-  const prompt = `
-    You are an expert presentation strategist using the "Beyond Bulletpoints" methodology.
-    Based on the following project context, generate Act I headline options for the canvas.
-
-    Client: ${client || 'Unknown Client'}
-    Project Overview: ${background || 'No background provided.'}
-    Additional Notes: ${notes || 'None.'}
-
-    ${buildAct1CardGenerationInstructions()}
-    
-    IMPORTANT: You must return ONLY a valid JSON array of objects. Do not include markdown formatting like \`\`\`json.
-    Ensure all double quotes inside the content strings are properly escaped (e.g., \\").
-    Each object must have exactly two properties:
-    - "section": Must be one of: ${ACT1_SECTION_IDS.map((section) => `"${section}"`).join(', ')}
-    - "content": The idea content as a string.
-  `;
+  const prompt = buildAct1BulkCardPrompt({ client, background, notes });
 
   try {
     const responseText = await requestTextCompletion(prompt, model, 'json');
@@ -470,31 +418,14 @@ export async function generateCardsForSection(
 ): Promise<CardData[]> {
   console.log('[AI] generateCardsForSection START:', { section, client: client || 'Unknown Client', backgroundLength: background.length, notesLength: notes.length, model, existingCardsCount: existingCards.length, storyContextCount: storyContext.length });
 
-  const prompt = `
-    Generate exactly 3 polished headline options for the "${getSectionLabel(section)}" column of an Act I presentation canvas.
-
-    Project context:
-    Client: ${limitPromptText(client || 'Unknown Client', 160)}
-    Project Overview:
-    ${background || 'No background provided.'}
-    Notes: ${notes || 'None.'}
-
-    Story arc so far (read these cards in sequence to understand the narrative):
-    ${formatStoryContext(storyContext)}
-
-    Your task: Generate 3 cards that ADVANCE the story arc above.
-    - Each card must be a natural next step from the previous sections.
-    - Build on the narrative, don't just echo it.
-    - The 3 cards should explore different angles of the SAME story step.
-    - They must read as a coherent continuation when placed after the previous sections.
-
-    Rule: ${SINGLE_IDEA_SECTION_RULES[section]}
-    Existing cards to avoid:
-    ${formatExistingIdeas(existingCards, section)}
-
-    Constraints: single sentence, ${ACT1_CARD_GENERATION_TARGET} characters max, valid JSON only.
-    JSON shape: [{"section":"${section}","content":"headline"}]
-  `;
+  const prompt = buildAct1SectionCardPrompt({
+    section,
+    client,
+    background,
+    notes,
+    storyContext: formatStoryContext(storyContext),
+    existingIdeas: formatExistingIdeas(existingCards, section),
+  });
 
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -546,26 +477,13 @@ export async function generateSingleIdea(
     throw new Error(`Unsupported Act I section: ${section}`);
   }
 
-  const prompt = `
-    Generate ONE concise presentation headline for the "${getSectionLabel(section)}" column.
-
-    Use only this compact context:
-    Client: ${limitPromptText(client || 'Unknown Client', 120)}
-    Project overview excerpt: ${limitPromptText(background || 'No background provided.', 700)}
-    Notes excerpt: ${limitPromptText(notes || 'None.', 250)}
-
-    Column rule: ${SINGLE_IDEA_SECTION_RULES[section]}
-
-    Existing "${getSectionLabel(section)}" cards to avoid:
-    ${formatExistingIdeas(existingCards, section)}
-
-    Output rules:
-    - Return only the headline text.
-    - One sentence only.
-    - ${ACT1_CARD_GENERATION_TARGET} characters or less.
-    - Clear, active, conversational language.
-    - No jargon, markdown, bullets, quotes, or labels.
-  `;
+  const prompt = buildAct1SingleIdeaPrompt({
+    section,
+    client,
+    background,
+    notes,
+    existingIdeas: formatExistingIdeas(existingCards, section),
+  });
 
   try {
     const responseText = await requestTextCompletionWithTimeout(prompt, model, 4_000);

@@ -79,13 +79,13 @@ Behavior rules:
 
 ## 2. Card Generation Prompts
 
-The full Act I headline rulebook lives in [`BBP_ACT1_GENERATION_SPEC.md`](./BBP_ACT1_GENERATION_SPEC.md). Executable prompts preserve the existing persisted section IDs while using the updated user-facing names:
+The live Act I prompt contract is defined in [`src/config/act1PromptSpec.ts`](./src/config/act1PromptSpec.ts). [`BBP_ACT1_GENERATION_SPEC.md`](./BBP_ACT1_GENERATION_SPEC.md) is the human-readable reference for the same rules. Executable prompts preserve the existing persisted section IDs while using the current user-facing names:
 
 - `place` -> Setting
 - `role` -> Role
-- `point_a` -> Point A
-- `point_b` -> Point B
-- `change` -> Call to Action
+- `point_a` -> Challenge
+- `point_b` -> Desired end state
+- `change` -> How do we get there?
 
 ### 2.1 Generate Cards
 
@@ -100,24 +100,24 @@ Project Overview: {background}
 Additional Notes: {notes}
 
 Generate Act I as a progressive narrative argument:
-Setting -> Role -> Point A -> Point B -> Call to Action.
+Setting -> Role -> Challenge -> Desired end state -> How do we get there?
 
 Generate exactly 3 options per section:
 - place (Setting)
 - role (Role)
-- point_a (Point A)
-- point_b (Point B)
-- change (Call to Action)
+- point_a (Challenge)
+- point_b (Desired end state)
+- change (How do we get there?)
 
 Each option must be:
 - a single sentence
-- 90 characters or less
+- 80 characters or less for generation, with 90 characters as the app validation limit
 - one idea only
 - standalone readable
 
 Use active voice, present tense, audience-focused framing, compressed phrasing, varied openings, and one consistent perspective (`you/your` or `we/our/us`) across all five sections.
 
-Avoid corporate jargon, buzzwords, marketing language, product names, product features, implementation details, technical architecture, company-centric framing, repetition across sections, and solution details except in Call to Action.
+Avoid corporate jargon, buzzwords, marketing language, product names, product features, implementation details, technical architecture, company-centric framing, repetition across sections, and solution details except in How do we get there?
 
 IMPORTANT: You must return ONLY a valid JSON array of objects. Do not include markdown formatting like ```json.
 Ensure all double quotes inside the content strings are properly escaped.
@@ -139,8 +139,8 @@ Project Overview: {background}
 Additional Notes: {notes}
 
 Follow the same Act I headline rules used by bulk card generation:
-- Setting -> Role -> Point A -> Point B -> Call to Action
-- 90 characters or less
+- Setting -> Role -> Challenge -> Desired end state -> How do we get there?
+- 80 characters or less for generation, with 90 characters as the app validation limit
 - one sentence
 - one idea
 - audience-focused
@@ -167,7 +167,7 @@ Additional Notes: {notes}
 Story Chain (Connected Ideas):
 {chain text}
 
-The story should be an arc following the logical steps of the card columns: Setting > Role > Point A > Point B > Call to Action.
+The story should be an arc following the logical steps of the card columns: Setting > Role > Challenge > Desired end state > How do we get there?
 Address the business/client directly in the third person.
 Write a creative tale that takes the reader on a short journey, establishing a setting, showing the hurdles, and mapping out the path to success.
 Make it dynamic, engaging, and directly connected to the provided nodes.

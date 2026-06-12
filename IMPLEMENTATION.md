@@ -29,12 +29,12 @@ Moved the canvas top-bar timer from local-only component state into the PartyKit
 ## 2026-06-05 — Act I five-column generation update
 
 ### Summary
-Replaced the old six-column Act I generation model with the five live headline sections from `BBP_ACT1_GENERATION_SPEC.md`: Setting, Role, Point A, Point B, and Call to Action. The app keeps persisted IDs `place` and `change` for compatibility while removing `challenge` from the live canvas.
+Replaced the old six-column Act I generation model with the five live headline sections from `BBP_ACT1_GENERATION_SPEC.md`: Setting, Role, Challenge, Desired end state, and How do we get there? The app keeps persisted IDs `place`, `point_a`, `point_b`, and `change` for compatibility while removing the old `challenge` ID from the live canvas.
 
 ### Decisions
-- **Compatibility over ID churn:** `place` remains the persisted ID for Setting and `change` remains the persisted ID for Call to Action.
+- **Compatibility over ID churn:** `place` remains the persisted ID for Setting, `point_a` remains the persisted ID for Challenge, `point_b` remains the persisted ID for Desired end state, and `change` remains the persisted ID for How do we get there?
 - **Challenge removed, not merged:** Local legacy `challenge` cards and their connections were deleted after a timestamped backup.
-- **90-character target:** Card generation and inline counters now use a 90-character limit for live Act I cards.
+- **80-character generation target, 90-character validation:** AI prompts target 80-character headlines while inline counters and saved-card validation allow up to 90 characters for live Act I cards.
 - **Prompt behavior changed:** Generated cards no longer need to start with "You are"; prompts now require varied openings and exactly three options per live section.
 
 ### Files changed
@@ -302,7 +302,7 @@ This session delivered **Slice B** (Role-aware beta UX), **Slice E** (Canvas beh
 | **Auth** | Centralized auth in `AuthContext.tsx`; refactored `App.tsx` and `LoginPage.tsx` |
 | **Sidebar** | Hidden for non-admins; compact mode with `localStorage` persistence |
 | **TopBar** | Help/tutorial dropdown with Play icon; swappable video-provider seam |
-| **AI Prompts** | 90-character target for `generateCards()` and `generateSingleIdea()` |
+| **AI Prompts** | 80-character generation target with 90-character saved-card validation |
 | **Character Counter** | Live "X / 90" in lower-left of cards; orange "Past limit" when > 90 |
 | **Story Aggregation** | Deterministic paragraph assembly; forward DFS for non-linear wiring |
 | **Connection Lines** | Continuous rAF + ResizeObserver for accurate positioning |
